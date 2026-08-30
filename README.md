@@ -5,6 +5,16 @@ Plataforma web responsiva para gestão e organização do Clube de Leitura D'Ela
 ## Tecnologia
 A definir - Candidato: Flutter
 
+## Passos para executar o código:
+
+1. Instalar dependências
+
+npm install
+
+2. Iniciar o Supabase local
+
+npx supabase start
+
 ## Documentação
 Para acessar a documentação do projeto, [clique aqui](https://tools.ages.pucrs.br/clube-de-leitura-d-elas/wiki/-/wikis/home).
 
