@@ -3,7 +3,7 @@
 Plataforma web responsiva para gestão e organização do Clube de Leitura D'Elas.
 
 ## Tecnologia
-A definir - Candidato: Flutter
+Supabase
 
 ## Passos para executar o código:
 
