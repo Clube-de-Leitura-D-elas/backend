@@ -8,12 +8,15 @@ Supabase
 ## Pré-requisitos
 
 Docker Desktop instalado e rodando
+
 Node.js instalado
 
 ## Setup do backend 
 
 cd backend
+
 npm install          # instala o Supabase CLI
+
 npx supabase start   # sobe o Supabase local via Docker
 
 ## Documentação
