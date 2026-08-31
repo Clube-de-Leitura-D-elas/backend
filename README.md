@@ -3,17 +3,21 @@
 Plataforma web responsiva para gestão e organização do Clube de Leitura D'Elas.
 
 ## Tecnologia
-Supabase
+Supabase 
 
-## Passos para executar o código:
+## Pré-requisitos
 
-1. Instalar dependências
+Docker Desktop instalado e rodando
 
-npm install
+Node.js instalado
 
-2. Iniciar o Supabase local
+## Setup do backend 
 
-npx supabase start
+cd backend
+
+npm install          # instala o Supabase CLI
+
+npx supabase start   # sobe o Supabase local via Docker
 
 ## Documentação
 Para acessar a documentação do projeto, [clique aqui](https://tools.ages.pucrs.br/clube-de-leitura-d-elas/wiki/-/wikis/home).
