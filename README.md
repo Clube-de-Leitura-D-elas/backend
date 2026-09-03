@@ -27,22 +27,29 @@ aplicação próprio. O que este repositório versiona é tudo aquilo que define
 
 ## 🚀 Como rodar localmente
 
-**Pré-requisitos:** [Docker](https://www.docker.com/products/docker-desktop/) e o
-[Supabase CLI](https://supabase.com/docs/guides/local-development).
+**Pré-requisitos:** [Docker](https://www.docker.com/products/docker-desktop/) instalado e rodando.
 
 ```bash
-# 1. Variáveis de ambiente
-cp .env.example .env
+# 1. Instala as dependências
+npm install
 
 # 2. Sobe o Supabase local (Postgres, Auth, Storage e Studio)
-supabase start
+npx supabase start
 
 # 3. Aplica as migrations em um banco limpo
-supabase db reset
+npx supabase db reset
 ```
 
-O Studio fica em `http://localhost:54323`. O `supabase start` imprime a URL da API e as chaves
-locais — use esses valores no `.env` do app durante o desenvolvimento.
+O Studio fica em `http://127.0.0.1:54323`.
+
+Após o `supabase start`, o terminal exibe a URL e as chaves locais. Use esses valores para preencher manualmente o `.env` do app mobile:
+
+| Variável | Campo no terminal |
+|---|---|
+| `SUPABASE_URL` | `Project URL` |
+| `SUPABASE_PUBLISHABLE_KEY` | `Publishable` |
+
+As credenciais também estão no **GitHub Secrets** do repositório.
 
 ---
 
@@ -50,12 +57,12 @@ locais — use esses valores no `.env` do app durante o desenvolvimento.
 
 ```bash
 # 1. Cria o arquivo de migration
-supabase migration new <descricao_curta>
+npx supabase migration new <descricao_curta>
 
 # 2. Escreve o SQL no arquivo gerado em supabase/migrations/
 
 # 3. Aplica em um banco limpo para validar que roda do zero
-supabase db reset
+npx supabase db reset
 
 # 4. Commita a migration e abre o PR
 ```
@@ -70,8 +77,7 @@ editar uma já aplicada.
 
 ## 🔐 Segredos
 
-Nenhuma chave do Supabase é commitada. O `.env.example` lista apenas os **nomes** das variáveis;
-os valores ficam no `.env` local, que está no `.gitignore`.
+Nenhuma chave do Supabase é commitada. As credenciais ficam no **GitHub Secrets** do repositório e devem ser adicionadas manualmente no `.env` do app mobile.
 
 ---
 

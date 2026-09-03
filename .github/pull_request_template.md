@@ -1,20 +1,26 @@
 ## Issue relacionada
 
-<!-- Identificador da issue no Linear. Ex.: CLU-24 -->
+_Qual tarefa do Linear esse PR resolve. Ex.: CLU-24_
+
+CLU-
 
 ## O que foi feito?
 
-<!-- Descreva a mudança em uma ou duas frases. -->
+_Resumo curto da mudança. Ex.: "Adicionada tabela `books` com RLS para leitura pública e escrita autenticada."_
 
 ## Por quê?
 
-<!-- Contexto e motivação. Se a issue já explica, pode só referenciar. -->
+_Motivação. Se a issue já explica tudo, pode só escrever "Ver CLU-24."_
 
 ## Como testar?
 
-<!-- Passos para quem for revisar validar a mudança. -->
+_Passo a passo para o revisor validar._
+
+1. 
 
 ## Checklist
+
+_Marque os itens que se aplicam ao seu PR antes de abrir._
 
 - [ ] Revisei meu próprio código antes de abrir o PR
 - [ ] Os critérios de aceite da issue foram atendidos
