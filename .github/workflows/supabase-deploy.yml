@@ -3,7 +3,7 @@ name: Deploy to Supabase
 on:
   push:
     branches:
-      - main
+      - develop
 
 jobs:
   deploy:
