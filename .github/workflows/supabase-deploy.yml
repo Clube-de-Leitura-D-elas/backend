@@ -22,11 +22,8 @@ jobs:
         with:
           version: latest
 
-      - name: Link Supabase Project
-        run: supabase link --project-ref $SUPABASE_PROJECT_ID
-
       - name: Push Database Migrations
-        run: supabase db push
+        run: supabase db push --project-ref $SUPABASE_PROJECT_ID --password $SUPABASE_DB_PASSWORD
 
       - name: Deploy Edge Functions
-        run: supabase functions deploy
+        run: supabase functions deploy --project-ref $SUPABASE_PROJECT_ID
