@@ -69,6 +69,6 @@ Deno.serve(async (req) => {
   `
 
   return new Response(html, {
-    headers: { "Content-Type": "text/html" },
+    headers: { "Content-Type": "text/html; charset=utf-8" },
   })
 })
