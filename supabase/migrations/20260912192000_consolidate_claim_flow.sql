@@ -1,3 +1,5 @@
+ALTER TABLE public.pending_users ALTER COLUMN token_used_at DROP DEFAULT;
+
 -- Drop old redundant triggers and functions
 DROP TRIGGER IF EXISTS on_pending_user_approval ON public.pending_users;
 DROP FUNCTION IF EXISTS public.pending_user_approval_edge_fn();
