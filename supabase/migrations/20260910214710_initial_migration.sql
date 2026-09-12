@@ -2,13 +2,18 @@
 -- 1. TYPES
 -- =========================================================
 
-CREATE TYPE public.app_roles AS ENUM (
+DO $$ BEGIN
+    CREATE TYPE public.app_roles AS ENUM (
     'READER',
     'MANAGER',
     'FOUNDER'
 );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
-CREATE TYPE public.levels_of_education AS ENUM (
+DO $$ BEGIN
+    CREATE TYPE public.levels_of_education AS ENUM (
     'NO_FORMAL_EDUCATION',
     'INCOMPLETE_ELEMENTARY',
     'ELEMENTARY',
@@ -26,33 +31,44 @@ CREATE TYPE public.levels_of_education AS ENUM (
     'DOCTORATE',
     'POSTDOCTORATE'
 );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
-CREATE TYPE public.meeting_status AS ENUM (
+DO $$ BEGIN
+    CREATE TYPE public.meeting_status AS ENUM (
     'CREATED',
     'SCHEDULED',
     'IN_PROGRESS',
     'CONCLUDED'
 );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
-CREATE TYPE public.notification_type AS ENUM (
+DO $$ BEGIN
+    CREATE TYPE public.notification_type AS ENUM (
     'BIRTHDAY',
     'BOOK_SUGGESTIONS_REMINDER',
     'COORDINATOR_TASKS_REMINDER',
     'HOST_TASKS_REMINDER'
 );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- =========================================================
 -- 2. TABLES WITHOUT DEPENDENCIES (or only on types)
 -- =========================================================
 
-CREATE TABLE public.cities (
+CREATE TABLE IF NOT EXISTS public.cities (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     name varchar NOT NULL,
     uf varchar NOT NULL,
     CONSTRAINT cities_pkey PRIMARY KEY (id)
 );
 
-CREATE TABLE public.photos (
+CREATE TABLE IF NOT EXISTS public.photos (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     url varchar NOT NULL,
     file_extension varchar NOT NULL,
@@ -61,7 +77,7 @@ CREATE TABLE public.photos (
     CONSTRAINT photos_pkey PRIMARY KEY (id)
 );
 
-CREATE TABLE public.locations (
+CREATE TABLE IF NOT EXISTS public.locations (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     address varchar NOT NULL,
     google_place_id varchar NOT NULL,
@@ -71,7 +87,7 @@ CREATE TABLE public.locations (
     CONSTRAINT locations_pkey PRIMARY KEY (id)
 );
 
-CREATE TABLE public.notifications (
+CREATE TABLE IF NOT EXISTS public.notifications (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     title varchar NOT NULL,
     scheduled_for timestamp with time zone NOT NULL,
@@ -80,7 +96,7 @@ CREATE TABLE public.notifications (
     CONSTRAINT notifications_pkey PRIMARY KEY (id)
 );
 
-CREATE TABLE public.pending_users (
+CREATE TABLE IF NOT EXISTS public.pending_users (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     created_at timestamp with time zone NOT NULL DEFAULT now(),
     name varchar NOT NULL,
@@ -104,7 +120,7 @@ CREATE TABLE public.pending_users (
 -- =========================================================
 
 -- depends on: cities
-CREATE TABLE public.zones (
+CREATE TABLE IF NOT EXISTS public.zones (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     name varchar NOT NULL,
     city_id uuid NOT NULL,
@@ -114,7 +130,7 @@ CREATE TABLE public.zones (
 );
 
 -- depends on: photos
-CREATE TABLE public.books (
+CREATE TABLE IF NOT EXISTS public.books (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     name varchar NOT NULL,
     author varchar NOT NULL,
@@ -132,7 +148,7 @@ CREATE TABLE public.books (
 -- =========================================================
 
 -- depends on: photos, cities, zones, auth.users
-CREATE TABLE public.users (
+CREATE TABLE IF NOT EXISTS public.users (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     name varchar NOT NULL,
     created_at timestamp with time zone NOT NULL DEFAULT now(),
@@ -160,7 +176,7 @@ CREATE TABLE public.users (
 );
 
 -- depends on: photos, cities, zones
-CREATE TABLE public.groups (
+CREATE TABLE IF NOT EXISTS public.groups (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     number integer NOT NULL,
     description varchar NOT NULL,
@@ -183,7 +199,7 @@ CREATE TABLE public.groups (
 -- =========================================================
 
 -- depends on: groups, users
-CREATE TABLE public.group_users (
+CREATE TABLE IF NOT EXISTS public.group_users (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     group_id uuid NOT NULL DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -202,7 +218,7 @@ CREATE TABLE public.group_users (
 -- =========================================================
 
 -- depends on: locations, groups, books, group_users
-CREATE TABLE public.meetings (
+CREATE TABLE IF NOT EXISTS public.meetings (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     date timestamp with time zone,
     location_id uuid,
@@ -222,7 +238,7 @@ CREATE TABLE public.meetings (
 );
 
 -- depends on: books, group_users
-CREATE TABLE public.book_suggestions (
+CREATE TABLE IF NOT EXISTS public.book_suggestions (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     book_id uuid NOT NULL,
     group_user_id uuid NOT NULL,
@@ -240,7 +256,7 @@ CREATE TABLE public.book_suggestions (
 -- =========================================================
 
 -- depends on: group_users, meetings
-CREATE TABLE public.meeting_group_users (
+CREATE TABLE IF NOT EXISTS public.meeting_group_users (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     group_user_id uuid NOT NULL,
     meeting_id uuid NOT NULL,
@@ -253,7 +269,7 @@ CREATE TABLE public.meeting_group_users (
 );
 
 -- depends on: photos, meetings
-CREATE TABLE public.meeting_photos (
+CREATE TABLE IF NOT EXISTS public.meeting_photos (
     photo_id uuid NOT NULL,
     meeting_id uuid NOT NULL,
     is_cover boolean NOT NULL DEFAULT false,
@@ -265,7 +281,7 @@ CREATE TABLE public.meeting_photos (
 );
 
 -- depends on: meetings, users
-CREATE TABLE public.meeting_guests (
+CREATE TABLE IF NOT EXISTS public.meeting_guests (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     meeting_id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -277,7 +293,7 @@ CREATE TABLE public.meeting_guests (
 );
 
 -- depends on: meetings, users, books
-CREATE TABLE public.book_reviews (
+CREATE TABLE IF NOT EXISTS public.book_reviews (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     meeting_id uuid,
     user_id uuid NOT NULL,
@@ -296,7 +312,7 @@ CREATE TABLE public.book_reviews (
 );
 
 -- depends on: notifications, users, meetings, groups
-CREATE TABLE public.notifications_targets (
+CREATE TABLE IF NOT EXISTS public.notifications_targets (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     notification_id uuid NOT NULL,
     user_id uuid NOT NULL,
