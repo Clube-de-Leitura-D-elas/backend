@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - develop
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/functions/**'
+      - 'supabase/config.toml'
 
 jobs:
   deploy:
