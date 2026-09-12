@@ -1,0 +1,4 @@
+# Todo PR aberto neste repositório pede review do time AGES III automaticamente.
+# O GitHub lê este arquivo a partir da branch base (main), sem precisar de token
+# ou workflow. Quem abre o PR não é solicitado a revisar o próprio PR.
+* @Clube-de-Leitura-D-elas/ages-iii
