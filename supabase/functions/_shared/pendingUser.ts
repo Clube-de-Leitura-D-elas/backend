@@ -1,4 +1,4 @@
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { isUuid } from "./uuid.ts";
 
 /**
  * Lê `pending_user_id` do corpo JSON de uma requisição POST.
@@ -17,7 +17,7 @@ export async function readPendingUserId(req: Request): Promise<string | Response
   }
 
   const id = (body as { pending_user_id?: unknown } | null)?.pending_user_id;
-  if (typeof id !== "string" || !UUID_REGEX.test(id)) {
+  if (!isUuid(id)) {
     return Response.json({ error: 'missing/invalid "pending_user_id"' }, { status: 400 });
   }
 
