@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { withSupabase } from "jsr:@supabase/functions-js";
+import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
 import { readPendingUserId } from "../_shared/pendingUser.ts";
