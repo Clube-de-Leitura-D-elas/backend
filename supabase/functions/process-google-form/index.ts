@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 serve(async (req)=>{
-  const { name, email, address, phone_number, birthday, job, level_of_education, instagram_user, book_name } = await req.json();
+  const { name, email, city, zone, phone_number, birthday, job, level_of_education, instagram_user, book_name } = await req.json();
   const supabaseUrl = Deno.env.get('SUPABASE_URL') as string;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') as string;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -11,7 +11,8 @@ serve(async (req)=>{
     {
       name,
       email,
-      address,
+      city,
+      zone,
       phone_number,
       birthday,
       job,
