@@ -21,7 +21,7 @@ serve(async (req)=>{
       status: 401
     });
   }
-  const { data: userProfile, error: profileError } = await supabaseAdmin.from('users').select('*').eq('user_id', user.id).maybeSingle();
+  const { data: userProfile, error: profileError } = await supabaseAdmin.from('users').select('*, city:cities(name, uf), zone:zones(name)').eq('user_id', user.id).maybeSingle();
   if (profileError) {
     return new Response(JSON.stringify({
       error: profileError.message
