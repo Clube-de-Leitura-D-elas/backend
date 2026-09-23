@@ -5,7 +5,7 @@ import { readGroupIdParam } from "../_shared/group.ts";
 
 type GroupRow = {
   id: string;
-  name: string | null;
+  number: number;
   photos: { url: string } | null;
   cities: { name: string; uf: string } | null;
   group_genres: { genres: { name: string } | null }[];
@@ -17,7 +17,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { data: group, error: groupError } = await ctx.supabaseAdmin
     .from("groups")
-    .select("id, name, photos(url), cities(name, uf), group_genres(genres(name))")
+    .select("id, number, photos(url), cities(name, uf), group_genres(genres(name))")
     .eq("id", groupId)
     .maybeSingle();
 
@@ -43,7 +43,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const typedGroup = group as unknown as GroupRow;
 
   return Response.json({
-    name: typedGroup.name,
+    name: String(typedGroup.number),
     genres: typedGroup.group_genres
       .map((gg) => gg.genres?.name)
       .filter((name): name is string => Boolean(name)),

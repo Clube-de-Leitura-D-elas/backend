@@ -1,7 +1,3 @@
--- Provisório: adicionando "name" em groups e modelando gêneros normalizados, a fim de atender a especificações da task
-
-ALTER TABLE public.groups ADD COLUMN name varchar;
-
 CREATE TABLE public.genres (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     name varchar NOT NULL UNIQUE,
