@@ -149,7 +149,7 @@ INSERT INTO s_users VALUES
   (30, 'elisa.montenegro',    'Elisa Montenegro',    '(81) 98764-4092', NULL,                 '1987-03-31', 'Médica',                      'POSTGRADUATE',             'READER',  'rec', NULL),
   (31, 'veronica.lins',       'Verônica Lins',       '(81) 99521-8846', 'vero.lins',          '1979-10-10', 'Professora',                  'DOCTORATE',                'READER',  'rec', NULL),
   (32, 'ingrid.bezerra',      'Ingrid Bezerra',      '(81) 98207-3375', 'ingrid.bezerra',     '1996-07-24', 'Designer',                    'TECHNICAL',                'READER',  'rec', NULL);
-
+  (33, 'mariana.souza',       'Mariana Souza',       '(51) 99111-2233', NULL,                 '1993-05-14', 'Professora',                  'UNDERGRADUATE',            'READER',  'poa', 'poa-sul');
 -- Vínculos grupo x participante ---------------------------
 -- (grp, usr, coordenadora?, ausências consecutivas mais recentes)
 -- Quem está em mais de um grupo: 1 (g1,g2), 5 (g1,g2,g7), 9 (g1,g2), 21 (g3,g4)
@@ -389,7 +389,10 @@ SELECT pg_temp.sid('user', u.key::text),
        u.role::public.app_roles,
        pg_temp.cid(u.city),
        pg_temp.zid(u.zone),
-       true,
+       CASE
+          WHEN u.key = 8 THEN false
+          ELSE true
+      END,
        pg_temp.sid('auth', u.key::text)
 FROM s_users u
 ON CONFLICT (id) DO NOTHING;
@@ -558,5 +561,14 @@ INSERT INTO public.book_reviews (id, meeting_id, user_id, book_rating, book_revi
    NULL,
    now() - interval '55 days', pg_temp.sid('book', '1'))
 ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.pending_users (id, created_at, name, email, address, phone_number, is_approved, claim_token, token_used_at, claim_token_expires_at, birthday, job, level_of_education, instagram_user, book_name)VALUES
+  (pg_temp.sid('pending_user', 'waiting'), now() - interval '3 days', 'Juliana Martins', 'juliana.martins@example.com', 'Rua das Flores, 120 - Porto Alegre - RS',
+    '(51) 98888-1001', false, NULL, NULL, NULL, '1991-08-12', 'Professora', 'UNDERGRADUATE', 'juliana.martins', 'Torto Arado'),
+  (pg_temp.sid('pending_user', 'approved'), now() - interval '2 days', 'Camila Rocha', 'camila.rocha@example.com', 'Rua da Praia, 450 - Porto Alegre - RS',
+    '(51) 98888-1002', true, 'seed-claim-token-approved', NULL, now() + interval '7 days', '1987-03-21', 'Designer', 'POSTGRADUATE', 'camilarocha', 'A Hora da Estrela'),
+  (pg_temp.sid('pending_user', 'used'), now() - interval '10 days', 'Renata Almeida', 'renata.almeida@example.com', 'Rua Independência, 780 - Porto Alegre - RS',
+    '(51) 98888-1003', true, 'seed-claim-token-used', now() - interval '4 days', now() - interval '3 days', '1985-11-06', 'Jornalista', 'MASTERS', 'renata.almeida', 'Quarto de Despejo')
+  ON CONFLICT (id) DO NOTHING;
 
 COMMIT;
