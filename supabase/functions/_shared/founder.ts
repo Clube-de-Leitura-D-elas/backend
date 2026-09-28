@@ -22,7 +22,7 @@ export async function requireFounder(
     .maybeSingle();
 
   if (error) {
-    console.error("founder check error", error);
+    console.error("founder check error", error.message.replace(/[\r\n]/g, ' '));
     return Response.json({ error: error.message }, { status: 500 });
   }
 

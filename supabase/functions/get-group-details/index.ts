@@ -22,7 +22,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .maybeSingle();
 
   if (groupError) {
-    console.error("get-group-details error", groupError);
+    console.error("get-group-details error", groupError.message.replace(/[\r\n]/g, ' '));
     return Response.json({ error: groupError.message }, { status: 500 });
   }
 
@@ -36,7 +36,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .eq("group_id", groupId);
 
   if (countError) {
-    console.error("get-group-details participant count error", countError);
+    console.error("get-group-details participant count error", countError.message.replace(/[\r\n]/g, ' '));
     return Response.json({ error: countError.message }, { status: 500 });
   }
 
