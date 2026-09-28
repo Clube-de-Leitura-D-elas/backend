@@ -148,7 +148,7 @@ INSERT INTO s_users VALUES
   (29, 'debora.cavalcanti',   'Débora Cavalcanti',   '(81) 99835-2764', 'debora.cavalcanti',  '1982-05-07', 'Jornalista',                  'MASTERS',                  'MANAGER', 'rec', NULL),
   (30, 'elisa.montenegro',    'Elisa Montenegro',    '(81) 98764-4092', NULL,                 '1987-03-31', 'Médica',                      'POSTGRADUATE',             'READER',  'rec', NULL),
   (31, 'veronica.lins',       'Verônica Lins',       '(81) 99521-8846', 'vero.lins',          '1979-10-10', 'Professora',                  'DOCTORATE',                'READER',  'rec', NULL),
-  (32, 'ingrid.bezerra',      'Ingrid Bezerra',      '(81) 98207-3375', 'ingrid.bezerra',     '1996-07-24', 'Designer',                    'TECHNICAL',                'READER',  'rec', NULL);
+  (32, 'ingrid.bezerra',      'Ingrid Bezerra',      '(81) 98207-3375', 'ingrid.bezerra',     '1996-07-24', 'Designer',                    'TECHNICAL',                'READER',  'rec', NULL),
   (33, 'mariana.souza',       'Mariana Souza',       '(51) 99111-2233', NULL,                 '1993-05-14', 'Professora',                  'UNDERGRADUATE',            'READER',  'poa', 'poa-sul');
 -- Vínculos grupo x participante ---------------------------
 -- (grp, usr, coordenadora?, ausências consecutivas mais recentes)
@@ -562,13 +562,13 @@ INSERT INTO public.book_reviews (id, meeting_id, user_id, book_rating, book_revi
    now() - interval '55 days', pg_temp.sid('book', '1'))
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.pending_users (id, created_at, name, email, address, phone_number, is_approved, claim_token, token_used_at, claim_token_expires_at, birthday, job, level_of_education, instagram_user, book_name)VALUES
-  (pg_temp.sid('pending_user', 'waiting'), now() - interval '3 days', 'Juliana Martins', 'juliana.martins@example.com', 'Rua das Flores, 120 - Porto Alegre - RS',
+INSERT INTO public.pending_users (id, created_at, name, email, phone_number, is_approved, claim_token, token_used_at, claim_token_expires_at, birthday, job, level_of_education, instagram_user, book_name) VALUES
+  (pg_temp.sid('pending_user', 'waiting'), now() - interval '3 days', 'Juliana Martins', 'juliana.martins@example.com',
     '(51) 98888-1001', false, NULL, NULL, NULL, '1991-08-12', 'Professora', 'UNDERGRADUATE', 'juliana.martins', 'Torto Arado'),
-  (pg_temp.sid('pending_user', 'approved'), now() - interval '2 days', 'Camila Rocha', 'camila.rocha@example.com', 'Rua da Praia, 450 - Porto Alegre - RS',
+  (pg_temp.sid('pending_user', 'approved'), now() - interval '2 days', 'Camila Rocha', 'camila.rocha@example.com',
     '(51) 98888-1002', true, 'seed-claim-token-approved', NULL, now() + interval '7 days', '1987-03-21', 'Designer', 'POSTGRADUATE', 'camilarocha', 'A Hora da Estrela'),
-  (pg_temp.sid('pending_user', 'used'), now() - interval '10 days', 'Renata Almeida', 'renata.almeida@example.com', 'Rua Independência, 780 - Porto Alegre - RS',
+  (pg_temp.sid('pending_user', 'used'), now() - interval '10 days', 'Renata Almeida', 'renata.almeida@example.com',
     '(51) 98888-1003', true, 'seed-claim-token-used', now() - interval '4 days', now() - interval '3 days', '1985-11-06', 'Jornalista', 'MASTERS', 'renata.almeida', 'Quarto de Despejo')
-  ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 COMMIT;
