@@ -53,6 +53,38 @@ As credenciais também estão no **GitHub Secrets** do repositório.
 
 ---
 
+## 🧪 Como testar uma edge function localmente
+
+Com o Supabase local rodando (`npx supabase start` + `npx supabase db reset`, que também aplica o
+`seed.sql`):
+
+```bash
+# 1. Sobe as edge functions (hot reload ao salvar o arquivo)
+npx supabase functions serve
+
+# 2. Em outro terminal, faz login com uma usuária do seed para pegar um JWT
+#    (senha de todas as usuárias do seed: ClubeDelas@123)
+TOKEN=$(curl -s -X POST "http://127.0.0.1:54321/auth/v1/token?grant_type=password" \
+  -H "apikey: <Publishable key do supabase start>" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"local.user.reader@gmail.com","password":"ClubeDelas@123"}' | jq -r .access_token)
+
+# 3. Pega um id para testar direto no banco
+psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c "select id, number from groups order by number"
+
+# 4. Chama a função
+curl -s "http://127.0.0.1:54321/functions/v1/get-group-next-event?group_id=<id>" \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+As funções declaradas com `verify_jwt = true` no `config.toml` recusam chamadas sem o header
+`Authorization` (401). Os logs (`console.error`) aparecem no terminal do `functions serve`.
+
+Vale testar, além do caminho feliz: id inexistente (404), id inválido (400), sem token (401) e os
+cenários que o seed já cobre (ver comentários na seção de encontros do `seed.sql`).
+
+---
+
 ## 🔄 Fluxo de mudança de schema
 
 ```bash
