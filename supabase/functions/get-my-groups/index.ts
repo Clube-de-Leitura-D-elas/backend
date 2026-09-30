@@ -80,7 +80,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
       const city = group.cities;
       return {
         id: group.id,
-        name: `Group ${group.number}`,
+        number: group.number,
         participant_count: countsByGroupId.get(group.id) ?? 0,
         city_state: city ? `${city.name}, ${city.uf}` : "",
         photo_url: group.photos?.url ?? null,
