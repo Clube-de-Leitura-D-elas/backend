@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
-import { readGroupIdParam } from "../_shared/group.ts";
+import { readGroupIdParam, requireGroupMember } from "../_shared/group.ts";
 
 type GroupRow = {
   id: string;
@@ -15,14 +15,22 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const groupId = readGroupIdParam(new URL(req.url));
   if (groupId instanceof Response) return groupId;
 
+  const denied = await requireGroupMember(ctx, groupId);
+  if (denied) return denied;
+
   const { data: group, error: groupError } = await ctx.supabaseAdmin
     .from("groups")
-    .select("id, number, photos(url), cities(name, uf), group_genres(genres(name))")
+    .select(
+      "id, number, photos(url), cities(name, uf), group_genres(genres(name))",
+    )
     .eq("id", groupId)
     .maybeSingle();
 
   if (groupError) {
-    console.error("get-group-details error", groupError.message.replace(/[\r\n]/g, ' '));
+    console.error(
+      "get-group-details error",
+      groupError.message.replace(/[\r\n]/g, " "),
+    );
     return Response.json({ error: groupError.message }, { status: 500 });
   }
 
@@ -36,7 +44,10 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .eq("group_id", groupId);
 
   if (countError) {
-    console.error("get-group-details participant count error", countError.message.replace(/[\r\n]/g, ' '));
+    console.error(
+      "get-group-details participant count error",
+      countError.message.replace(/[\r\n]/g, " "),
+    );
     return Response.json({ error: countError.message }, { status: 500 });
   }
 

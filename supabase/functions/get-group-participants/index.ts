@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
-import { readGroupIdParam } from "../_shared/group.ts";
+import { readGroupIdParam, requireGroupMember } from "../_shared/group.ts";
 
 type GroupUserRow = {
   is_coordinator: boolean;
@@ -15,6 +15,9 @@ type GroupUserRow = {
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const groupId = readGroupIdParam(new URL(req.url));
   if (groupId instanceof Response) return groupId;
+
+  const denied = await requireGroupMember(ctx, groupId);
+  if (denied) return denied;
 
   const { data: group, error: groupError } = await ctx.supabaseAdmin
     .from("groups")
