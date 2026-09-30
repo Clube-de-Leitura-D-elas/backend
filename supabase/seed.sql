@@ -463,6 +463,16 @@ ON CONFLICT (id) DO UPDATE SET
   book_id     = EXCLUDED.book_id,
   status      = EXCLUDED.status;
 
+-- Descrições (as demais ficam NULL, para exercitar o estado sem descrição)
+UPDATE public.meetings mt
+SET description = d.text
+FROM (VALUES
+  ('g1-m3', 'Conversamos sobre as escolhas da narradora e como a memória molda a forma de contar a própria história.'),
+  ('g1-m4', 'Neste encontro discutimos os principais temas do livro, com foco nos capítulos iniciais. Foi uma conversa muito rica sobre ciúmes e narrativa não confiável.'),
+  ('g3-m4', 'Encontro longo e cheio de debates. Começamos pelas primeiras impressões de cada uma, passamos pela construção das personagens secundárias, pelas relações de poder dentro da família e pelo contexto histórico em que a obra foi escrita. No fim, cada participante escolheu um trecho favorito para ler em voz alta, e a conversa seguiu no café até bem depois do horário combinado. Ficou a sugestão de revisitar o livro daqui a um ano para ver o que mudou na nossa leitura.')
+) AS d(key, text)
+WHERE mt.id = pg_temp.sid('meeting', d.key);
+
 -- ---------------------------------------------------------
 -- 8. INDICAÇÕES DE LIVROS
 -- ---------------------------------------------------------
