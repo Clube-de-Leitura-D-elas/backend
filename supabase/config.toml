@@ -448,3 +448,8 @@ import_map = "./functions/get-group-participants/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/get-my-groups/deno.json"
+
+[functions.get-group-next-event]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-group-next-event/deno.json"
