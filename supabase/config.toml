@@ -466,11 +466,5 @@ import_map = "./functions/get-meeting-details/deno.json"
 
 [functions.group-grid-web]
 enabled = true
-verify_jwt = false
-import_map = "./functions/group-grid-web/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+verify_jwt = true
 entrypoint = "./functions/group-grid-web/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/group-grid-web/*.html" ]

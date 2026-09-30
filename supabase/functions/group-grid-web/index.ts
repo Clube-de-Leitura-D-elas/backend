@@ -84,44 +84,36 @@ const normalizeText = (value: string) =>
 const formatGroupName = (number: number, description: string) =>
   `Grupo ${String(number).padStart(2, "0")} — ${description}`;
 
-const parseRequest = async (
+const parseRequest = (
   req: Request,
-): Promise<Required<GroupGridRequest>> => {
-  let body: GroupGridRequest = {};
-
-  if (req.method === "POST") {
-    body = await req.json().catch(() => ({} as GroupGridRequest));
-  }
-
+): Required<GroupGridRequest> => {
   const url = new URL(req.url);
 
   const page = toPositiveInt(
-    body.page ?? url.searchParams.get("page"),
+    url.searchParams.get("page"),
     DEFAULT_PAGE,
   );
 
   const pageSize = Math.min(
     toPositiveInt(
-      body.pageSize ?? url.searchParams.get("pageSize"),
+      url.searchParams.get("pageSize"),
       DEFAULT_PAGE_SIZE,
     ),
     MAX_PAGE_SIZE,
   );
 
   const search = String(
-    body.search ?? url.searchParams.get("search") ?? "",
+    url.searchParams.get("search") ?? "",
   ).trim();
 
-  const rawCityId =
-    body.cityId ?? url.searchParams.get("cityId") ?? null;
+  const rawCityId = url.searchParams.get("cityId");
 
   const cityId =
     rawCityId && rawCityId !== "all"
       ? rawCityId
       : null;
 
-  const rawOrder =
-    body.order ?? url.searchParams.get("order");
+  const rawOrder = url.searchParams.get("order");
 
   const order: GroupOrder =
     rawOrder === "name_desc"
@@ -141,7 +133,7 @@ Deno.serve(
   withSupabase<Database>(
     { auth: "user" },
     async (req, ctx) => {
-      if (req.method !== "GET" && req.method !== "POST") {
+      if (req.method !== "GET") {
         return Response.json(
           { error: "Method not allowed" },
           { status: 405 },
@@ -160,7 +152,7 @@ Deno.serve(
         search,
         cityId,
         order,
-      } = await parseRequest(req);
+      } = parseRequest(req);
 
       if (cityId && !isUuid(cityId)) {
         return Response.json(
@@ -175,7 +167,7 @@ Deno.serve(
        * Esses dados não são afetados pela busca, filtro ou paginação
        * aplicada na tabela.
        */
-      const metaPromise = ctx.supabase
+      const metaPromise = ctx.supabaseAdmin
         .from("groups")
         .select(
           `
@@ -203,7 +195,7 @@ Deno.serve(
       let matchingGroupIds: string[] | null = null;
 
       if (search) {
-        let searchQuery = ctx.supabase
+        let searchQuery = ctx.supabaseAdmin
           .from("groups")
           .select(
             `
@@ -272,7 +264,7 @@ Deno.serve(
        * não executamos .in("id", []).
        */
       if (!search || (matchingGroupIds?.length ?? 0) > 0) {
-        let groupsQuery = ctx.supabase
+        let groupsQuery = ctx.supabaseAdmin
           .from("groups")
           .select(
             `
@@ -425,7 +417,7 @@ Deno.serve(
         membersResult,
         meetingsResult,
       ] = await Promise.all([
-        ctx.supabase
+        ctx.supabaseAdmin
           .from("group_users")
           .select(
             `
@@ -439,7 +431,7 @@ Deno.serve(
           .in("group_id", groupIds)
           .order("id"),
 
-        ctx.supabase
+        ctx.supabaseAdmin
           .from("meetings")
           .select(
             `
@@ -541,12 +533,8 @@ Deno.serve(
        */
       const items = groupRows.map((group) => ({
         id: group.id,
-
-        name: formatGroupName(
-          group.number,
-          group.description,
-        ),
-
+        number: group.number,
+        description: group.description,
         createdAt: group.created_at,
 
         city: group.cities
