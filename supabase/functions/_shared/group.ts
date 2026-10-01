@@ -16,6 +16,14 @@ export async function requireGroupMember(
   ctx: SupabaseContext<Database>,
   groupId: string,
 ): Promise<Response | null> {
+  const member = await requireGroupMemberProfile(ctx, groupId);
+  return member instanceof Response ? member : null;
+}
+
+export async function requireGroupMemberProfile(
+  ctx: SupabaseContext<Database>,
+  groupId: string,
+): Promise<{ profileId: string } | Response> {
   const authUserId = ctx.userClaims?.id;
   if (!authUserId) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -62,5 +70,5 @@ export async function requireGroupMember(
     });
   }
 
-  return null;
+  return { profileId: profile.id };
 }
