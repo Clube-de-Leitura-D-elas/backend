@@ -4,7 +4,7 @@ import type { Database } from "../_shared/database.ts";
 import { readGroupIdParam } from "../_shared/group.ts";
 import { readNeighborhood } from "../_shared/location.ts";
 import { oneLine } from "../_shared/log.ts";
-import { requireManagement } from "../_shared/management.ts";
+import { requireRole } from "../_shared/role.ts";
 
 // `group_users.registration_status` é varchar livre; "ACTIVE" é o único valor
 // que o schema e o seed documentam para vínculo ativo.
@@ -44,7 +44,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const denied = await requireManagement(ctx);
+  const denied = await requireRole(ctx, ["MANAGER", "FOUNDER"], "management");
   if (denied) return denied;
 
   const groupId = readGroupIdParam(new URL(req.url), "groupId");

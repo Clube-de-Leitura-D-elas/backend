@@ -4,9 +4,9 @@ import type { Database } from "../_shared/database.ts";
 import { readGroupIdParam, requireExistingGroup } from "../_shared/group.ts";
 import { readNeighborhood } from "../_shared/location.ts";
 import { oneLine } from "../_shared/log.ts";
-import { requireManagement } from "../_shared/management.ts";
 import { parseListParams } from "../_shared/pagination.ts";
 import { isPresent } from "../_shared/presence.ts";
+import { requireRole } from "../_shared/role.ts";
 
 type MeetingRow = {
   id: string;
@@ -35,7 +35,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const denied = await requireManagement(ctx);
+  const denied = await requireRole(ctx, ["MANAGER", "FOUNDER"], "management");
   if (denied) return denied;
 
   const url = new URL(req.url);
