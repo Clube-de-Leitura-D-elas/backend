@@ -2,14 +2,49 @@ import { isUuid } from "./uuid.ts";
 import type { SupabaseContext } from "jsr:@supabase/server@^1";
 import type { Database } from "./database.ts";
 
-export function readGroupIdParam(url: URL): string | Response {
-  const id = url.searchParams.get("group_id");
+/**
+ * Lê o id do grupo da query string.
+ *
+ * As funções do app usam `group_id`; as do painel web usam `groupId`, como o
+ * resto dos parâmetros que ele envia (`pageSize`, `cityId`).
+ */
+export function readGroupIdParam(
+  url: URL,
+  key = "group_id",
+): string | Response {
+  const id = url.searchParams.get(key);
   if (!isUuid(id)) {
-    return Response.json({ error: 'missing/invalid "group_id"' }, {
+    return Response.json({ error: `missing/invalid "${key}"` }, {
       status: 400,
     });
   }
   return id;
+}
+
+/** Garante que o grupo existe, para não paginar lista de um id inventado. */
+export async function requireExistingGroup(
+  ctx: SupabaseContext<Database>,
+  groupId: string,
+): Promise<Response | null> {
+  const { data: group, error } = await ctx.supabaseAdmin
+    .from("groups")
+    .select("id")
+    .eq("id", groupId)
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      "group existence check error",
+      error.message.replace(/[\r\n]/g, " "),
+    );
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+
+  if (!group) {
+    return Response.json({ error: "group not found" }, { status: 404 });
+  }
+
+  return null;
 }
 
 export async function requireGroupMember(
