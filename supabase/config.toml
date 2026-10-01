@@ -493,3 +493,8 @@ import_map = "./functions/add-meeting-photo/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/get-meeting-photos/deno.json"
+
+[functions.get-groups-web]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-groups-web/index.ts"
