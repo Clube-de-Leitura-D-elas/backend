@@ -6,6 +6,7 @@ import { readGroupIdParam, requireGroupMember } from "../_shared/group.ts";
 type GroupRow = {
   id: string;
   number: number;
+  whatsapp_link: string | null;
   photos: { url: string } | null;
   cities: { name: string; uf: string } | null;
   group_genres: { genres: { name: string } | null }[];
@@ -21,7 +22,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data: group, error: groupError } = await ctx.supabaseAdmin
     .from("groups")
     .select(
-      "id, number, photos(url), cities(name, uf), group_genres(genres(name))",
+      "id, number, whatsapp_link, photos(url), cities(name, uf), group_genres(genres(name))",
     )
     .eq("id", groupId)
     .maybeSingle();
@@ -62,5 +63,6 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     city: typedGroup.cities?.name ?? null,
     state_code: typedGroup.cities?.uf ?? null,
     cover_image_url: typedGroup.photos?.url ?? null,
+    whatsapp_url: typedGroup.whatsapp_link,
   });
 }));
