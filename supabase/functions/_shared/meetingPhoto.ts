@@ -11,13 +11,19 @@ export type MeetingPhoto = { id: string; url: string };
 export async function signMeetingPhotos(
   ctx: SupabaseContext<Database>,
   req: Request,
+  meetingId: string,
   photos: MeetingPhoto[],
 ): Promise<MeetingPhoto[] | Response> {
+  const meetingPrefix = `meetings/${meetingId}/`;
   const storagePaths = photos
     .map((photo) => photo.url)
-    .filter((url) => !ABSOLUTE_URL_REGEX.test(url));
+    .filter((url) =>
+      !ABSOLUTE_URL_REGEX.test(url) && url.startsWith(meetingPrefix)
+    );
 
-  if (storagePaths.length === 0) return photos;
+  if (storagePaths.length === 0) {
+    return photos.filter((photo) => ABSOLUTE_URL_REGEX.test(photo.url));
+  }
 
   const { data, error } = await ctx.supabaseAdmin.storage
     .from(MEETING_PHOTOS_BUCKET)
@@ -61,7 +67,7 @@ function toPublicUrl(signedUrl: string, req: Request): string {
   if (!host) return signedUrl;
 
   url.protocol = req.headers.get("x-forwarded-proto") ?? url.protocol;
-  url.hostname = host;
-  url.port = req.headers.get("x-forwarded-port") ?? "";
+  const port = req.headers.get("x-forwarded-port");
+  url.host = host.includes(":") || !port ? host : `${host}:${port}`;
   return url.toString();
 }

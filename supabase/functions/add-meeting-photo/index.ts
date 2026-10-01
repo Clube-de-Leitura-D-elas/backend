@@ -141,7 +141,14 @@ async function findExistingPhoto(
     });
   }
 
-  return await signedPhotoResponse(ctx, req, data.id, data.url, 200);
+  return await signedPhotoResponse(
+    ctx,
+    req,
+    request.meetingId,
+    data.id,
+    data.url,
+    200,
+  );
 }
 
 async function rejectWhenMeetingIsFull(
@@ -183,7 +190,7 @@ async function storePhoto(
 
   const { error: uploadError } = await storage.upload(objectPath, bytes, {
     contentType: request.contentType,
-    upsert: false,
+    upsert: true,
   });
   if (uploadError) {
     logError("upload error", uploadError.message);
@@ -200,6 +207,7 @@ async function storePhoto(
     return await signedPhotoResponse(
       ctx,
       req,
+      request.meetingId,
       request.photoId,
       objectPath,
       201,
@@ -255,11 +263,12 @@ async function insertPhotoRows(
 async function signedPhotoResponse(
   ctx: Ctx,
   req: Request,
+  meetingId: string,
   id: string,
   url: string,
   status: number,
 ): Promise<Response> {
-  const signed = await signMeetingPhotos(ctx, req, [{ id, url }]);
+  const signed = await signMeetingPhotos(ctx, req, meetingId, [{ id, url }]);
   if (signed instanceof Response) return signed;
   if (signed.length === 0) return serverError();
 

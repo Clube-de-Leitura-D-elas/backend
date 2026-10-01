@@ -53,7 +53,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     )
     .map((photo) => ({ id: photo.id, url: photo.url }));
 
-  const signed = await signMeetingPhotos(ctx, req, photos);
+  const signed = await signMeetingPhotos(ctx, req, meetingId, photos);
   if (signed instanceof Response) return signed;
 
   return Response.json({ photos: signed });
