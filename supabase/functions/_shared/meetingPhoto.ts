@@ -10,6 +10,7 @@ export type MeetingPhoto = { id: string; url: string };
 
 export async function signMeetingPhotos(
   ctx: SupabaseContext<Database>,
+  req: Request,
   photos: MeetingPhoto[],
 ): Promise<MeetingPhoto[] | Response> {
   const storagePaths = photos
@@ -35,7 +36,7 @@ export async function signMeetingPhotos(
   const signedUrlByPath = new Map<string, string>();
   for (const item of data ?? []) {
     if (item.path && item.signedUrl) {
-      signedUrlByPath.set(item.path, item.signedUrl);
+      signedUrlByPath.set(item.path, toPublicUrl(item.signedUrl, req));
     }
   }
 
@@ -48,4 +49,19 @@ export async function signMeetingPhotos(
     }
     return [{ id: photo.id, url: signedUrl }];
   });
+}
+
+// The local edge runtime signs with its internal gateway host (kong:8000),
+// which devices cannot reach; rewrite it to the origin the client called.
+function toPublicUrl(signedUrl: string, req: Request): string {
+  const url = new URL(signedUrl);
+  if (url.hostname !== "kong") return signedUrl;
+
+  const host = req.headers.get("x-forwarded-host");
+  if (!host) return signedUrl;
+
+  url.protocol = req.headers.get("x-forwarded-proto") ?? url.protocol;
+  url.hostname = host;
+  url.port = req.headers.get("x-forwarded-port") ?? "";
+  return url.toString();
 }

@@ -50,7 +50,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   });
   if (member instanceof Response) return member;
 
-  const existing = await findExistingPhoto(ctx, request);
+  const existing = await findExistingPhoto(ctx, req, request);
   if (existing) return existing;
 
   const full = await rejectWhenMeetingIsFull(ctx, request.meetingId);
@@ -59,10 +59,12 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const bytes = decodePhoto(request);
   if (bytes instanceof Response) return bytes;
 
-  return await storePhoto(ctx, request, bytes, member.profileId);
+  return await storePhoto(ctx, req, request, bytes, member.profileId);
 }));
 
-async function readPhotoRequest(req: Request): Promise<PhotoRequest | Response> {
+async function readPhotoRequest(
+  req: Request,
+): Promise<PhotoRequest | Response> {
   if (req.method !== "POST") {
     return Response.json({ error: "expected POST request" }, { status: 405 });
   }
@@ -117,6 +119,7 @@ async function readPhotoRequest(req: Request): Promise<PhotoRequest | Response> 
 
 async function findExistingPhoto(
   ctx: Ctx,
+  req: Request,
   request: PhotoRequest,
 ): Promise<Response | null> {
   const { data, error } = await ctx.supabaseAdmin
@@ -131,14 +134,14 @@ async function findExistingPhoto(
   }
   if (!data) return null;
 
-  const link = data.meeting_photos as { meeting_id: string } | null;
+  const link = data.meeting_photos as unknown as { meeting_id: string } | null;
   if (link?.meeting_id !== request.meetingId) {
     return Response.json({ error: '"photo_id" already in use' }, {
       status: 422,
     });
   }
 
-  return await signedPhotoResponse(ctx, data.id, data.url, 200);
+  return await signedPhotoResponse(ctx, req, data.id, data.url, 200);
 }
 
 async function rejectWhenMeetingIsFull(
@@ -169,6 +172,7 @@ function decodePhoto(request: PhotoRequest): Uint8Array | Response {
 
 async function storePhoto(
   ctx: Ctx,
+  req: Request,
   request: PhotoRequest,
   bytes: Uint8Array,
   uploadedBy: string,
@@ -186,9 +190,20 @@ async function storePhoto(
     return serverError();
   }
 
-  const insertError = await insertPhotoRows(ctx, request, objectPath, uploadedBy);
+  const insertError = await insertPhotoRows(
+    ctx,
+    request,
+    objectPath,
+    uploadedBy,
+  );
   if (!insertError) {
-    return await signedPhotoResponse(ctx, request.photoId, objectPath, 201);
+    return await signedPhotoResponse(
+      ctx,
+      req,
+      request.photoId,
+      objectPath,
+      201,
+    );
   }
 
   logError("insert error", insertError.message);
@@ -239,11 +254,12 @@ async function insertPhotoRows(
 
 async function signedPhotoResponse(
   ctx: Ctx,
+  req: Request,
   id: string,
   url: string,
   status: number,
 ): Promise<Response> {
-  const signed = await signMeetingPhotos(ctx, [{ id, url }]);
+  const signed = await signMeetingPhotos(ctx, req, [{ id, url }]);
   if (signed instanceof Response) return signed;
   if (signed.length === 0) return serverError();
 
@@ -302,7 +318,8 @@ function photoTooLarge(): Response {
 
 function meetingIsFull(): Response {
   return Response.json({
-    error: `meeting already has the maximum of ${MAX_PHOTOS_PER_MEETING} photos`,
+    error:
+      `meeting already has the maximum of ${MAX_PHOTOS_PER_MEETING} photos`,
   }, { status: 409 });
 }
 
