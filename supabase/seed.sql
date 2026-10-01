@@ -477,6 +477,20 @@ FROM (VALUES
 ) AS d(key, text)
 WHERE mt.id = pg_temp.sid('meeting', d.key);
 
+-- Criação do grupo = primeiro encontro, como o backfill da migration
+-- 20261001190000_add_group_created_at faz com os grupos já existentes.
+UPDATE public.groups g
+SET created_at = first_meeting.date
+FROM (
+  SELECT group_id, min(date) AS date
+  FROM public.meetings
+  WHERE date IS NOT NULL
+  GROUP BY group_id
+) first_meeting
+WHERE first_meeting.group_id = g.id
+  AND first_meeting.date < now()
+  AND g.id IN (SELECT pg_temp.sid('group', n::text) FROM generate_series(1, 7) n);
+
 -- ---------------------------------------------------------
 -- 8. INDICAÇÕES DE LIVROS
 -- ---------------------------------------------------------
