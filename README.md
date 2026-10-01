@@ -83,6 +83,13 @@ As funções declaradas com `verify_jwt = true` no `config.toml` recusam chamada
 Vale testar, além do caminho feliz: id inexistente (404), id inválido (400), sem token (401) e os
 cenários que o seed já cobre (ver comentários na seção de encontros do `seed.sql`).
 
+### Resposta de presença
+
+`set-meeting-attendance-response` exige JWT e aceita somente `POST` com
+`{ "meeting_id": "<uuid>", "presence_status": "PRESENT" | "ABSENT" }`. A função confirma que
+a usuária autenticada pertence ao grupo e que o encontro possui data e ainda está elegível
+(`CREATED`, `SCHEDULED` futuro ou `IN_PROGRESS`) antes de registrar ou atualizar sua resposta.
+
 ---
 
 ## 🔄 Fluxo de mudança de schema

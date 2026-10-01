@@ -453,3 +453,8 @@ import_map = "./functions/get-my-groups/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/get-group-next-event/deno.json"
+
+[functions.set-meeting-attendance-response]
+enabled = true
+verify_jwt = true
+import_map = "./functions/set-meeting-attendance-response/deno.json"
