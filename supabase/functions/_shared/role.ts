@@ -33,7 +33,8 @@ export async function requireRole(
     return Response.json({ error: error.message }, { status: 500 });
   }
 
-  if (!roles.includes(profile?.app_role)) {
+  const role = profile?.app_role as AppRole | undefined;
+  if (!role || !roles.includes(role)) {
     return Response.json(
       { error: `Forbidden: ${scope} only` },
       { status: 403 },
