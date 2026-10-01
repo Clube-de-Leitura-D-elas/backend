@@ -219,7 +219,7 @@ Deno.serve(
 
         if (searchError) {
           console.error(
-            "group-grid-web search error",
+            "get-groups-web search error",
             searchError,
           );
 
@@ -312,7 +312,7 @@ Deno.serve(
 
         if (error) {
           console.error(
-            "group-grid-web groups error",
+            "get-groups-web groups error",
             error,
           );
 
@@ -332,7 +332,7 @@ Deno.serve(
 
       if (metaResult.error) {
         console.error(
-          "group-grid-web metadata error",
+          "get-groups-web metadata error",
           metaResult.error,
         );
 
@@ -455,7 +455,7 @@ Deno.serve(
 
       if (detailError) {
         console.error(
-          "group-grid-web details error",
+          "get-groups-web details error",
           detailError,
         );
 

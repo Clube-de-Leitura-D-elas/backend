@@ -464,7 +464,7 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/get-meeting-details/deno.json"
 
-[functions.group-grid-web]
+[functions.get-groups-web]
 enabled = true
 verify_jwt = true
-entrypoint = "./functions/group-grid-web/index.ts"
+entrypoint = "./functions/get-groups-web/index.ts"
