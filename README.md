@@ -83,6 +83,15 @@ As funções declaradas com `verify_jwt = true` no `config.toml` recusam chamada
 Vale testar, além do caminho feliz: id inexistente (404), id inválido (400), sem token (401) e os
 cenários que o seed já cobre (ver comentários na seção de encontros do `seed.sql`).
 
+### Funções do painel web (sufixo `-web`)
+
+O app mobile e o painel web pedem recortes diferentes dos mesmos dados. Quando as duas telas
+precisam do mesmo assunto, a função do painel leva o sufixo `-web` — `get-group-details` serve o
+app, `get-group-details-web` serve o painel — para que mudar o contrato de uma não quebre a outra.
+
+As funções do painel também leem a query string em camelCase (`groupId`, `pageSize`, `cityId`),
+que é o formato que o front envia, e devolvem listas paginadas como `{ items, total }`.
+
 ### Resposta de presença
 
 `set-meeting-attendance-response` exige JWT e aceita somente `POST` com
