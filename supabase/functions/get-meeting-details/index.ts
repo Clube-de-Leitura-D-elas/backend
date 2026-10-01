@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
+import { requireGroupMember } from "../_shared/group.ts";
 import { readMeetingIdParam } from "../_shared/meeting.ts";
 
 type MeetingRow = {
@@ -40,6 +41,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const meeting = data as unknown as MeetingRow;
+
+  const denied = await requireGroupMember(ctx, meeting.group_id);
+  if (denied) return denied;
 
   // "Encontro N": posição do encontro na ordem cronológica dos encontros do
   // grupo que já têm data. Rascunho sem data não tem número.
