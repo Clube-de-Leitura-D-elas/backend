@@ -8,6 +8,7 @@ type MeetingRow = {
   date: string;
   status: string;
   locations: { name: string; address: string } | null;
+  books: { name: string; photos: { url: string } | null } | null;
   host: { users: { name: string } };
 };
 
@@ -40,7 +41,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
-      "id, date, status, locations(name, address), host:group_users!meetings_host_id_fkey!inner(users!inner(name))",
+      "id, date, status, locations(name, address), books(name, photos(url)), host:group_users!meetings_host_id_fkey!inner(users!inner(name))",
     )
     .eq("group_id", groupId)
     .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
@@ -72,6 +73,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       location_name: meeting.locations?.name ?? null,
       location_address: meeting.locations?.address ?? null,
       host_name: meeting.host.users.name,
+      book_title: meeting.books?.name ?? null,
+      book_cover_url: meeting.books?.photos?.url ?? null,
     },
   });
 }));
