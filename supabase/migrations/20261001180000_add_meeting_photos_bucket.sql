@@ -13,3 +13,30 @@ ON CONFLICT (id) DO NOTHING;
 -- `uploaded_at` é só data; a galeria precisa da ordem de envio.
 ALTER TABLE public.photos
     ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+
+-- Garante o teto de fotos por encontro mesmo com envios concorrentes: o lock
+-- na linha do encontro serializa os inserts do mesmo encontro.
+CREATE OR REPLACE FUNCTION public.enforce_meeting_photos_limit()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+    PERFORM 1 FROM public.meetings WHERE id = NEW.meeting_id FOR UPDATE;
+
+    IF (
+        SELECT count(*) FROM public.meeting_photos
+        WHERE meeting_id = NEW.meeting_id
+    ) >= 50 THEN
+        RAISE EXCEPTION 'meeting % already has the maximum of 50 photos', NEW.meeting_id
+            USING ERRCODE = 'P0050';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS meeting_photos_limit ON public.meeting_photos;
+CREATE TRIGGER meeting_photos_limit
+    BEFORE INSERT ON public.meeting_photos
+    FOR EACH ROW EXECUTE FUNCTION public.enforce_meeting_photos_limit();

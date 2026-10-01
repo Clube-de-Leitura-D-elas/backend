@@ -42,6 +42,10 @@ export async function signMeetingPhotos(
   return photos.flatMap((photo) => {
     if (ABSOLUTE_URL_REGEX.test(photo.url)) return [photo];
     const signedUrl = signedUrlByPath.get(photo.url);
-    return signedUrl ? [{ id: photo.id, url: signedUrl }] : [];
+    if (!signedUrl) {
+      console.warn("meeting photo without signed url", photo.id);
+      return [];
+    }
+    return [{ id: photo.id, url: signedUrl }];
   });
 }

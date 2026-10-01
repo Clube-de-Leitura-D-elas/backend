@@ -12,6 +12,10 @@ import { isUuid } from "../_shared/uuid.ts";
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const MAX_PHOTOS_PER_MEETING = 50;
 const MAX_BASE64_LENGTH = Math.ceil(MAX_PHOTO_BYTES / 3) * 4;
+const MAX_BODY_BYTES = MAX_BASE64_LENGTH + 4096;
+const PHOTO_LIMIT_ERRCODE = "P0050";
+
+const HEIC_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "mif1", "msf1"]);
 
 const EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -20,18 +24,53 @@ const EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
   "image/heic": "heic",
 };
 
-type AddMeetingPhotoBody = {
-  meeting_id?: unknown;
-  content_type?: unknown;
-  data_base64?: unknown;
+type Ctx = SupabaseContext<Database>;
+
+type PhotoRequest = {
+  meetingId: string;
+  photoId: string;
+  contentType: string;
+  extension: string;
+  encoded: string;
 };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
+  const request = await readPhotoRequest(req);
+  if (request instanceof Response) return request;
+
+  const groupId = await findMeetingGroupId(
+    ctx,
+    request.meetingId,
+    "add-meeting-photo",
+  );
+  if (groupId instanceof Response) return groupId;
+
+  const member = await requireGroupMemberProfile(ctx, groupId, {
+    activeOnly: true,
+  });
+  if (member instanceof Response) return member;
+
+  const existing = await findExistingPhoto(ctx, request);
+  if (existing) return existing;
+
+  const full = await rejectWhenMeetingIsFull(ctx, request.meetingId);
+  if (full) return full;
+
+  const bytes = decodePhoto(request);
+  if (bytes instanceof Response) return bytes;
+
+  return await storePhoto(ctx, request, bytes, member.profileId);
+}));
+
+async function readPhotoRequest(req: Request): Promise<PhotoRequest | Response> {
   if (req.method !== "POST") {
     return Response.json({ error: "expected POST request" }, { status: 405 });
   }
+  if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) {
+    return photoTooLarge();
+  }
 
-  let body: AddMeetingPhotoBody | null;
+  let body: Record<string, unknown> | null;
   try {
     body = await req.json();
   } catch {
@@ -40,9 +79,12 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const meetingId = body?.meeting_id;
   if (!isUuid(meetingId)) {
-    return Response.json({ error: 'missing/invalid "meeting_id"' }, {
-      status: 400,
-    });
+    return badRequest('missing/invalid "meeting_id"');
+  }
+
+  const photoId = body?.photo_id ?? crypto.randomUUID();
+  if (!isUuid(photoId)) {
+    return badRequest('invalid "photo_id"');
   }
 
   const contentType = body?.content_type;
@@ -50,113 +92,162 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     ? EXTENSION_BY_CONTENT_TYPE[contentType]
     : undefined;
   if (!extension) {
-    return Response.json({
-      error: 'missing/invalid "content_type" (expected one of: ' +
+    return badRequest(
+      'missing/invalid "content_type" (expected one of: ' +
         Object.keys(EXTENSION_BY_CONTENT_TYPE).join(", ") + ")",
-    }, { status: 400 });
+    );
   }
 
   const encoded = body?.data_base64;
   if (typeof encoded !== "string" || encoded.length === 0) {
-    return Response.json({ error: 'missing/invalid "data_base64"' }, {
-      status: 400,
-    });
+    return badRequest('missing/invalid "data_base64"');
   }
   if (encoded.length > MAX_BASE64_LENGTH) {
     return photoTooLarge();
   }
 
-  const bytes = decodeBase64(encoded);
-  if (!bytes) {
-    return Response.json({ error: 'invalid "data_base64"' }, { status: 400 });
+  return {
+    meetingId,
+    photoId: photoId.toLowerCase(),
+    contentType: contentType as string,
+    extension,
+    encoded,
+  };
+}
+
+async function findExistingPhoto(
+  ctx: Ctx,
+  request: PhotoRequest,
+): Promise<Response | null> {
+  const { data, error } = await ctx.supabaseAdmin
+    .from("photos")
+    .select("id, url, meeting_photos(meeting_id)")
+    .eq("id", request.photoId)
+    .maybeSingle();
+
+  if (error) {
+    logError("existing photo error", error.message);
+    return serverError();
   }
-  if (bytes.byteLength > MAX_PHOTO_BYTES) {
-    return photoTooLarge();
-  }
-  if (!matchesContentType(bytes, contentType as string)) {
-    return Response.json({ error: '"data_base64" does not match "content_type"' }, {
-      status: 400,
+  if (!data) return null;
+
+  const link = data.meeting_photos as { meeting_id: string } | null;
+  if (link?.meeting_id !== request.meetingId) {
+    return Response.json({ error: '"photo_id" already in use' }, {
+      status: 422,
     });
   }
 
-  const groupId = await findMeetingGroupId(ctx, meetingId, "add-meeting-photo");
-  if (groupId instanceof Response) return groupId;
+  return await signedPhotoResponse(ctx, data.id, data.url, 200);
+}
 
-  const member = await requireGroupMemberProfile(ctx, groupId);
-  if (member instanceof Response) return member;
-
-  const { count, error: countError } = await ctx.supabaseAdmin
+async function rejectWhenMeetingIsFull(
+  ctx: Ctx,
+  meetingId: string,
+): Promise<Response | null> {
+  const { count, error } = await ctx.supabaseAdmin
     .from("meeting_photos")
     .select("photo_id", { count: "exact", head: true })
     .eq("meeting_id", meetingId);
 
-  if (countError) {
-    console.error(
-      "add-meeting-photo count error",
-      countError.message.replace(/[\r\n]/g, " "),
-    );
-    return Response.json({ error: "Unable to add meeting photo" }, {
-      status: 500,
-    });
+  if (error) {
+    logError("count error", error.message);
+    return serverError();
   }
-  if ((count ?? 0) >= MAX_PHOTOS_PER_MEETING) {
-    return Response.json({
-      error: `meeting already has the maximum of ${MAX_PHOTOS_PER_MEETING} photos`,
-    }, { status: 409 });
-  }
+  return (count ?? 0) >= MAX_PHOTOS_PER_MEETING ? meetingIsFull() : null;
+}
 
-  const photoId = crypto.randomUUID();
-  const objectPath = `meetings/${meetingId}/${photoId}.${extension}`;
+function decodePhoto(request: PhotoRequest): Uint8Array | Response {
+  const bytes = decodeBase64(request.encoded);
+  if (!bytes) return badRequest('invalid "data_base64"');
+  if (bytes.byteLength > MAX_PHOTO_BYTES) return photoTooLarge();
+  if (!matchesContentType(bytes, request.contentType)) {
+    return badRequest('"data_base64" does not match "content_type"');
+  }
+  return bytes;
+}
+
+async function storePhoto(
+  ctx: Ctx,
+  request: PhotoRequest,
+  bytes: Uint8Array,
+  uploadedBy: string,
+): Promise<Response> {
+  const objectPath =
+    `meetings/${request.meetingId}/${request.photoId}.${request.extension}`;
   const storage = ctx.supabaseAdmin.storage.from(MEETING_PHOTOS_BUCKET);
 
   const { error: uploadError } = await storage.upload(objectPath, bytes, {
-    contentType: contentType as string,
+    contentType: request.contentType,
     upsert: false,
   });
   if (uploadError) {
-    console.error(
-      "add-meeting-photo upload error",
-      uploadError.message.replace(/[\r\n]/g, " "),
-    );
-    return Response.json({ error: "Unable to add meeting photo" }, {
-      status: 500,
-    });
+    logError("upload error", uploadError.message);
+    return serverError();
   }
 
-  const insertError = await insertPhotoRows(ctx, {
-    photoId,
-    meetingId,
-    objectPath,
-    extension,
-    uploadedBy: member.profileId,
-  });
-  if (insertError) {
-    console.error(
-      "add-meeting-photo insert error",
-      insertError.replace(/[\r\n]/g, " "),
-    );
-    const { error: removeError } = await storage.remove([objectPath]);
-    if (removeError) {
-      console.error(
-        "add-meeting-photo cleanup error",
-        removeError.message.replace(/[\r\n]/g, " "),
-      );
-    }
-    return Response.json({ error: "Unable to add meeting photo" }, {
-      status: 500,
-    });
+  const insertError = await insertPhotoRows(ctx, request, objectPath, uploadedBy);
+  if (!insertError) {
+    return await signedPhotoResponse(ctx, request.photoId, objectPath, 201);
   }
 
-  const signed = await signMeetingPhotos(ctx, [{ id: photoId, url: objectPath }]);
+  logError("insert error", insertError.message);
+  if (insertError.code === "23505") return serverError();
+
+  const { error: removeError } = await storage.remove([objectPath]);
+  if (removeError) logError("cleanup error", removeError.message);
+
+  return insertError.code === PHOTO_LIMIT_ERRCODE
+    ? meetingIsFull()
+    : serverError();
+}
+
+async function insertPhotoRows(
+  ctx: Ctx,
+  request: PhotoRequest,
+  objectPath: string,
+  uploadedBy: string,
+): Promise<{ code?: string; message: string } | null> {
+  const { error: photoError } = await ctx.supabaseAdmin
+    .from("photos")
+    .insert({
+      id: request.photoId,
+      url: objectPath,
+      file_extension: request.extension,
+      uploaded_at: todayInSaoPaulo(),
+      uploaded_by: uploadedBy,
+    });
+  if (photoError) return photoError;
+
+  const { error: linkError } = await ctx.supabaseAdmin
+    .from("meeting_photos")
+    .insert({
+      photo_id: request.photoId,
+      meeting_id: request.meetingId,
+      is_cover: false,
+    });
+  if (!linkError) return null;
+
+  const { error: rollbackError } = await ctx.supabaseAdmin
+    .from("photos")
+    .delete()
+    .eq("id", request.photoId);
+  if (rollbackError) logError("rollback error", rollbackError.message);
+
+  return linkError;
+}
+
+async function signedPhotoResponse(
+  ctx: Ctx,
+  id: string,
+  url: string,
+  status: number,
+): Promise<Response> {
+  const signed = await signMeetingPhotos(ctx, [{ id, url }]);
   if (signed instanceof Response) return signed;
+  if (signed.length === 0) return serverError();
 
-  return Response.json({ photo: signed[0] ?? null }, { status: 201 });
-}));
-
-function photoTooLarge(): Response {
-  return Response.json({
-    error: `photo exceeds the maximum of ${MAX_PHOTO_BYTES} bytes`,
-  }, { status: 413 });
+  return Response.json({ photo: signed[0] }, { status });
 }
 
 function decodeBase64(encoded: string): Uint8Array | null {
@@ -180,46 +271,43 @@ function matchesContentType(bytes: Uint8Array, contentType: string): boolean {
     case "image/jpeg":
       return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
     case "image/png":
-      return ascii(1, 4) === "PNG" && bytes[0] === 0x89;
+      return bytes[0] === 0x89 && ascii(1, 4) === "PNG";
     case "image/webp":
       return ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP";
     case "image/heic":
-      return ascii(4, 8) === "ftyp";
+      return ascii(4, 8) === "ftyp" && HEIC_BRANDS.has(ascii(8, 12));
     default:
       return false;
   }
 }
 
-async function insertPhotoRows(
-  ctx: SupabaseContext<Database>,
-  row: {
-    photoId: string;
-    meetingId: string;
-    objectPath: string;
-    extension: string;
-    uploadedBy: string;
-  },
-): Promise<string | null> {
-  const { error: photoError } = await ctx.supabaseAdmin
-    .from("photos")
-    .insert({
-      id: row.photoId,
-      url: row.objectPath,
-      file_extension: row.extension,
-      uploaded_at: new Date().toISOString().slice(0, 10),
-      uploaded_by: row.uploadedBy,
-    });
-  if (photoError) return photoError.message;
+function todayInSaoPaulo(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" })
+    .format(new Date());
+}
 
-  const { error: linkError } = await ctx.supabaseAdmin
-    .from("meeting_photos")
-    .insert({
-      photo_id: row.photoId,
-      meeting_id: row.meetingId,
-      is_cover: false,
-    });
-  if (!linkError) return null;
+function logError(label: string, message: string) {
+  console.error(`add-meeting-photo ${label}`, message.replace(/[\r\n]/g, " "));
+}
 
-  await ctx.supabaseAdmin.from("photos").delete().eq("id", row.photoId);
-  return linkError.message;
+function badRequest(error: string): Response {
+  return Response.json({ error }, { status: 400 });
+}
+
+function photoTooLarge(): Response {
+  return Response.json({
+    error: `photo exceeds the maximum of ${MAX_PHOTO_BYTES} bytes`,
+  }, { status: 413 });
+}
+
+function meetingIsFull(): Response {
+  return Response.json({
+    error: `meeting already has the maximum of ${MAX_PHOTOS_PER_MEETING} photos`,
+  }, { status: 409 });
+}
+
+function serverError(): Response {
+  return Response.json({ error: "Unable to add meeting photo" }, {
+    status: 500,
+  });
 }
