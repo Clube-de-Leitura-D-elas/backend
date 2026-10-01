@@ -1,23 +1,15 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
-
 import type { Database } from "../_shared/database.ts";
-import { requireManagement } from "../_shared/management.ts";
+import { oneLine } from "../_shared/log.ts";
+import { parseListParams } from "../_shared/pagination.ts";
+import { requireRole } from "../_shared/role.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
-const DEFAULT_PAGE = 1;
-const DEFAULT_PAGE_SIZE = 6;
-const MAX_PAGE_SIZE = 100;
+const ACTIVE_REGISTRATION = "ACTIVE";
 
-type GroupOrder = "name_asc" | "name_desc";
-
-type GroupGridRequest = {
-  page?: number;
-  pageSize?: number;
-  search?: string;
-  cityId?: string | null;
-  order?: GroupOrder;
-};
+const GROUP_NUMBER = /^(?:grupo\s+)?0*(\d{1,9})$/i;
+const GROUP_NAME = /^grupo\s+0*(\d{1,9})\s*[—–-]\s*(.+)$/i;
 
 type GroupRow = {
   id: string;
@@ -25,53 +17,25 @@ type GroupRow = {
   description: string;
   created_at: string;
   active: boolean;
-  city_id: string;
-  cities: {
-    id: string;
-    name: string;
-  } | null;
-};
-
-type SearchGroupRow = {
-  id: string;
-  number: number;
-  description: string;
-  cities: {
-    name: string;
-  } | null;
-};
-
-type GroupUserRow = {
-  group_id: string;
-  is_coordinator: boolean;
-  users: {
-    name: string;
-  } | null;
-};
-
-type MeetingRow = {
-  group_id: string;
-  date: string | null;
+  cities: { id: string; name: string } | null;
 };
 
 type GroupMetaRow = {
   active: boolean;
   city_id: string;
-  cities: {
-    id: string;
-    name: string;
-  } | null;
+  cities: { id: string; name: string } | null;
 };
 
-const toPositiveInt = (value: unknown, fallback: number) => {
-  const parsed =
-    typeof value === "number"
-      ? value
-      : Number.parseInt(String(value ?? ""), 10);
+type GroupUserRow = {
+  group_id: string;
+  is_coordinator: boolean;
+  registration_status: string;
+  users: { name: string; is_active: boolean } | null;
+};
 
-  return Number.isFinite(parsed) && parsed > 0
-    ? Math.floor(parsed)
-    : fallback;
+type MeetingRow = {
+  group_id: string;
+  date: string;
 };
 
 const normalizeText = (value: string) =>
@@ -81,497 +45,197 @@ const normalizeText = (value: string) =>
     .toLocaleLowerCase("pt-BR")
     .trim();
 
-const formatGroupName = (number: number, description: string) =>
-  `Grupo ${String(number).padStart(2, "0")} — ${description}`;
+const likePattern = (value: string) => `%${value.replace(/[\\%_]/g, "\\$&")}%`;
 
-const parseRequest = (
-  req: Request,
-): Required<GroupGridRequest> => {
-  const url = new URL(req.url);
+// Valor dentro de `.or()`: vírgula e parênteses do texto quebram o filtro sem aspas.
+const quoted = (value: string) => `"${value.replace(/["\\]/g, "\\$&")}"`;
 
-  const page = toPositiveInt(
-    url.searchParams.get("page"),
-    DEFAULT_PAGE,
-  );
+const searchFilter = (search: string, cityIds: string[]) => {
+  const filters = [`description.ilike.${quoted(likePattern(search))}`];
 
-  const pageSize = Math.min(
-    toPositiveInt(
-      url.searchParams.get("pageSize"),
-      DEFAULT_PAGE_SIZE,
-    ),
-    MAX_PAGE_SIZE,
-  );
+  if (cityIds.length > 0) filters.push(`city_id.in.(${cityIds.join(",")})`);
 
-  const search = String(
-    url.searchParams.get("search") ?? "",
-  ).trim();
+  const number = GROUP_NUMBER.exec(search);
+  if (number) filters.push(`number.eq.${Number(number[1])}`);
 
-  const rawCityId = url.searchParams.get("cityId");
+  const name = GROUP_NAME.exec(search);
+  if (name) {
+    filters.push(
+      `and(number.eq.${Number(name[1])},description.ilike.${
+        quoted(likePattern(name[2].trim()))
+      })`,
+    );
+  }
 
-  const cityId =
-    rawCityId && rawCityId !== "all"
-      ? rawCityId
-      : null;
-
-  const rawOrder = url.searchParams.get("order");
-
-  const order: GroupOrder =
-    rawOrder === "name_desc"
-      ? "name_desc"
-      : "name_asc";
-
-  return {
-    page,
-    pageSize,
-    search,
-    cityId,
-    order,
-  };
+  return filters.join(",");
 };
 
-Deno.serve(
-  withSupabase<Database>(
-    { auth: "user" },
-    async (req, ctx) => {
-      if (req.method !== "GET") {
-        return Response.json(
-          { error: "Method not allowed" },
-          { status: 405 },
-        );
-      }
+// Lista de grupos do painel web.
+// Query string: page, pageSize, order, search, cityId.
+Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
+  if (req.method !== "GET") {
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
+  }
 
-      const denied = await requireManagement(ctx);
+  const denied = await requireRole(ctx, ["MANAGER", "FOUNDER"], "management");
+  if (denied) return denied;
 
-      if (denied) {
-        return denied;
-      }
+  const url = new URL(req.url);
+  const { from, to, order } = parseListParams(url);
+  const search = url.searchParams.get("search")?.trim() ?? "";
+  const rawCityId = url.searchParams.get("cityId");
+  const cityId = rawCityId && rawCityId !== "all" ? rawCityId : null;
 
-      const {
-        page,
-        pageSize,
-        search,
-        cityId,
-        order,
-      } = parseRequest(req);
+  if (cityId && !isUuid(cityId)) {
+    return Response.json({ error: "Invalid cityId" }, { status: 400 });
+  }
 
-      if (cityId && !isUuid(cityId)) {
-        return Response.json(
-          { error: "Invalid cityId" },
-          { status: 400 },
-        );
-      }
+  const metaResult = await ctx.supabaseAdmin
+    .from("groups")
+    .select("active, city_id, cities(id, name)");
 
-      /*
-       * Cabeçalho e opções de cidade.
-       *
-       * Esses dados não são afetados pela busca, filtro ou paginação
-       * aplicada na tabela.
-       */
-      const metaPromise = ctx.supabaseAdmin
-        .from("groups")
-        .select(
-          `
-            active,
-            city_id,
-            cities (
-              id,
-              name
-            )
-          `,
-        );
+  if (metaResult.error) {
+    console.error(
+      "get-groups-web metadata error",
+      oneLine(metaResult.error.message),
+    );
+    return Response.json({ error: metaResult.error.message }, { status: 500 });
+  }
 
-      /*
-       * A busca precisa considerar:
-       *
-       * - nome completo do grupo;
-       * - descrição;
-       * - número;
-       * - cidade.
-       *
-       * Como o nome exibido é montado usando number + description
-       * e a cidade está em uma relação, primeiro encontramos os IDs
-       * que combinam com a busca.
-       */
-      let matchingGroupIds: string[] | null = null;
+  const metaRows = (metaResult.data ?? []) as unknown as GroupMetaRow[];
 
-      if (search) {
-        let searchQuery = ctx.supabaseAdmin
-          .from("groups")
-          .select(
-            `
-              id,
-              number,
-              description,
-              cities (
-                name
-              )
-            `,
-          );
+  let activeGroups = 0;
+  const activeCityIds = new Set<string>();
+  const cityMap = new Map<string, string>();
 
-        if (cityId) {
-          searchQuery = searchQuery.eq("city_id", cityId);
-        }
+  for (const group of metaRows) {
+    if (group.cities) cityMap.set(group.cities.id, group.cities.name);
+    if (group.active) {
+      activeGroups += 1;
+      activeCityIds.add(group.city_id);
+    }
+  }
 
-        const {
-          data: searchData,
-          error: searchError,
-        } = await searchQuery;
+  const cities = [...cityMap.entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
-        if (searchError) {
-          console.error(
-            "get-groups-web search error",
-            searchError,
-          );
+  const summary = { activeGroups, cities: activeCityIds.size };
 
-          return Response.json(
-            { error: searchError.message },
-            { status: 400 },
-          );
-        }
+  let groupsQuery = ctx.supabaseAdmin
+    .from("groups")
+    .select("id, number, description, created_at, active, cities(id, name)", {
+      count: "exact",
+    });
 
-        const normalizedSearch = normalizeText(search);
+  if (cityId) groupsQuery = groupsQuery.eq("city_id", cityId);
 
-        matchingGroupIds = (
-          (searchData ?? []) as unknown as SearchGroupRow[]
-        )
-          .filter((group) => {
-            const groupName = formatGroupName(
-              group.number,
-              group.description,
-            );
+  if (search) {
+    const normalizedSearch = normalizeText(search);
+    const matchingCityIds = cities
+      .filter((city) => normalizeText(city.name).includes(normalizedSearch))
+      .map((city) => city.id);
 
-            const searchableText = normalizeText(
-              `${groupName} ${group.description} ${
-                group.cities?.name ?? ""
-              }`,
-            );
+    groupsQuery = groupsQuery.or(searchFilter(search, matchingCityIds));
+  }
 
-            return searchableText.includes(
-              normalizedSearch,
-            );
-          })
-          .map((group) => group.id);
-      }
+  groupsQuery = order.column === "name"
+    ? groupsQuery
+      .order("number", { ascending: order.ascending })
+      .order("description", { ascending: order.ascending })
+    : groupsQuery.order(order.column, { ascending: order.ascending });
 
-      const from = (page - 1) * pageSize;
-      const to = from + pageSize - 1;
+  const { data, error, count } = await groupsQuery
+    .order("id")
+    .range(from, to);
 
-      let groupRows: GroupRow[] = [];
-      let total = 0;
+  if (error) {
+    console.error("get-groups-web groups error", oneLine(error.message));
+    return Response.json({ error: error.message }, { status: 500 });
+  }
 
-      /*
-       * Se existe uma busca e nenhum grupo combinou,
-       * não executamos .in("id", []).
-       */
-      if (!search || (matchingGroupIds?.length ?? 0) > 0) {
-        let groupsQuery = ctx.supabaseAdmin
-          .from("groups")
-          .select(
-            `
-              id,
-              number,
-              description,
-              created_at,
-              active,
-              city_id,
-              cities (
-                id,
-                name
-              )
-            `,
-            {
-              count: "exact",
-            },
-          );
+  const groupRows = (data ?? []) as unknown as GroupRow[];
+  const total = count ?? 0;
 
-        if (cityId) {
-          groupsQuery = groupsQuery.eq(
-            "city_id",
-            cityId,
-          );
-        }
+  if (groupRows.length === 0) {
+    return Response.json({ items: [], total, summary, cities });
+  }
 
-        if (matchingGroupIds) {
-          groupsQuery = groupsQuery.in(
-            "id",
-            matchingGroupIds,
-          );
-        }
+  const groupIds = groupRows.map((group) => group.id);
 
-        const ascending = order === "name_asc";
+  const [membersResult, meetingsResult] = await Promise.all([
+    ctx.supabaseAdmin
+      .from("group_users")
+      .select(
+        "group_id, is_coordinator, registration_status, users(name, is_active)",
+      )
+      .in("group_id", groupIds)
+      .order("id"),
 
-        const {
-          data,
-          error,
-          count,
-        } = await groupsQuery
-          .order("number", { ascending })
-          .order("description", { ascending })
-          .order("id", { ascending: true })
-          .range(from, to);
+    ctx.supabaseAdmin
+      .from("meetings")
+      .select("group_id, date")
+      .in("group_id", groupIds)
+      .not("date", "is", null)
+      .gte("date", new Date().toISOString())
+      .neq("status", "CONCLUDED")
+      .order("date", { ascending: true }),
+  ]);
 
-        if (error) {
-          console.error(
-            "get-groups-web groups error",
-            error,
-          );
+  const detailError = membersResult.error ?? meetingsResult.error;
 
-          return Response.json(
-            { error: error.message },
-            { status: 400 },
-          );
-        }
+  if (detailError) {
+    console.error("get-groups-web details error", oneLine(detailError.message));
+    return Response.json({ error: detailError.message }, { status: 500 });
+  }
 
-        groupRows =
-          (data ?? []) as unknown as GroupRow[];
+  const memberCountByGroup = new Map<string, number>();
+  const coordinatorByGroup = new Map<string, string>();
+  const nextMeetingByGroup = new Map<string, string>();
 
-        total = count ?? 0;
-      }
-
-      const metaResult = await metaPromise;
-
-      if (metaResult.error) {
-        console.error(
-          "get-groups-web metadata error",
-          metaResult.error,
-        );
-
-        return Response.json(
-          { error: metaResult.error.message },
-          { status: 400 },
-        );
-      }
-
-      const metaRows =
-        (metaResult.data ?? []) as unknown as GroupMetaRow[];
-
-      /*
-       * Cabeçalho:
-       *
-       * "42 grupos ativos em 7 cidades"
-       */
-      let activeGroups = 0;
-
-      const activeCityIds = new Set<string>();
-      const cityMap = new Map<string, string>();
-
-      for (const group of metaRows) {
-        if (group.cities) {
-          cityMap.set(
-            group.cities.id,
-            group.cities.name,
-          );
-        }
-
-        if (group.active) {
-          activeGroups += 1;
-          activeCityIds.add(group.city_id);
-        }
-      }
-
-      /*
-       * Também devolvemos as cidades disponíveis.
-       *
-       * Isso alimenta o Dropdown:
-       * "Cidade: todas".
-       */
-      const cities = [...cityMap.entries()]
-        .map(([id, name]) => ({
-          id,
-          name,
-        }))
-        .sort((a, b) =>
-          a.name.localeCompare(b.name, "pt-BR")
-        );
-
-      /*
-       * Página vazia.
-       *
-       * Ainda precisamos devolver total, cabeçalho
-       * e opções de cidades.
-       */
-      if (groupRows.length === 0) {
-        return Response.json({
-          items: [],
-          total,
-          summary: {
-            activeGroups,
-            cities: activeCityIds.size,
-          },
-          cities,
-        });
-      }
-
-      const groupIds = groupRows.map(
-        (group) => group.id,
+  for (
+    const membership of (membersResult.data ?? []) as unknown as GroupUserRow[]
+  ) {
+    if (
+      membership.registration_status === ACTIVE_REGISTRATION &&
+      membership.users?.is_active
+    ) {
+      memberCountByGroup.set(
+        membership.group_id,
+        (memberCountByGroup.get(membership.group_id) ?? 0) + 1,
       );
+    }
 
-      /*
-       * Informações complementares:
-       *
-       * - quantidade de membras;
-       * - coordenadora;
-       * - próximo encontro.
-       */
-      const [
-        membersResult,
-        meetingsResult,
-      ] = await Promise.all([
-        ctx.supabaseAdmin
-          .from("group_users")
-          .select(
-            `
-              group_id,
-              is_coordinator,
-              users (
-                name
-              )
-            `,
-          )
-          .in("group_id", groupIds)
-          .order("id"),
+    if (
+      membership.is_coordinator &&
+      membership.users?.name &&
+      !coordinatorByGroup.has(membership.group_id)
+    ) {
+      coordinatorByGroup.set(membership.group_id, membership.users.name);
+    }
+  }
 
-        ctx.supabaseAdmin
-          .from("meetings")
-          .select(
-            `
-              group_id,
-              date
-            `,
-          )
-          .in("group_id", groupIds)
-          .not("date", "is", null)
-          .gte(
-            "date",
-            new Date().toISOString(),
-          )
-          .neq("status", "CONCLUDED")
-          .order("date", { ascending: true }),
-      ]);
+  for (
+    const meeting of (meetingsResult.data ?? []) as unknown as MeetingRow[]
+  ) {
+    if (!nextMeetingByGroup.has(meeting.group_id)) {
+      nextMeetingByGroup.set(meeting.group_id, meeting.date);
+    }
+  }
 
-      const detailError =
-        membersResult.error ??
-        meetingsResult.error;
+  const items = groupRows.map((group) => ({
+    id: group.id,
+    number: group.number,
+    description: group.description,
+    createdAt: group.created_at,
+    city: group.cities
+      ? { id: group.cities.id, name: group.cities.name }
+      : null,
+    coordinator: coordinatorByGroup.get(group.id) ?? null,
+    members: memberCountByGroup.get(group.id) ?? 0,
+    nextMeetingAt: nextMeetingByGroup.get(group.id) ?? null,
+    status: group.active ? "active" : "closed",
+  }));
 
-      if (detailError) {
-        console.error(
-          "get-groups-web details error",
-          detailError,
-        );
-
-        return Response.json(
-          { error: detailError.message },
-          { status: 400 },
-        );
-      }
-
-      const memberships =
-        (membersResult.data ??
-          []) as unknown as GroupUserRow[];
-
-      const meetings =
-        (meetingsResult.data ??
-          []) as unknown as MeetingRow[];
-
-      const memberCountByGroup =
-        new Map<string, number>();
-
-      const coordinatorByGroup =
-        new Map<string, string>();
-
-      const nextMeetingByGroup =
-        new Map<string, string>();
-
-      /*
-       * Conta as membras e encontra a coordenadora.
-       */
-      for (const membership of memberships) {
-        memberCountByGroup.set(
-          membership.group_id,
-          (
-            memberCountByGroup.get(
-              membership.group_id,
-            ) ?? 0
-          ) + 1,
-        );
-
-        if (
-          membership.is_coordinator &&
-          membership.users?.name &&
-          !coordinatorByGroup.has(
-            membership.group_id,
-          )
-        ) {
-          coordinatorByGroup.set(
-            membership.group_id,
-            membership.users.name,
-          );
-        }
-      }
-
-      /*
-       * Como meetings já está ordenado por data,
-       * o primeiro encontrado para cada grupo
-       * é o próximo encontro.
-       */
-      for (const meeting of meetings) {
-        if (
-          meeting.date &&
-          !nextMeetingByGroup.has(
-            meeting.group_id,
-          )
-        ) {
-          nextMeetingByGroup.set(
-            meeting.group_id,
-            meeting.date,
-          );
-        }
-      }
-
-      /*
-       * Contrato final consumido pela tela.
-       */
-      const items = groupRows.map((group) => ({
-        id: group.id,
-        number: group.number,
-        description: group.description,
-        createdAt: group.created_at,
-
-        city: group.cities
-          ? {
-              id: group.cities.id,
-              name: group.cities.name,
-            }
-          : null,
-
-        coordinator:
-          coordinatorByGroup.get(group.id) ??
-          null,
-
-        members:
-          memberCountByGroup.get(group.id) ??
-          0,
-
-        nextMeetingAt:
-          nextMeetingByGroup.get(group.id) ??
-          null,
-
-        status: group.active
-          ? "active"
-          : "closed",
-      }));
-
-      return Response.json({
-        items,
-        total,
-
-        summary: {
-          activeGroups,
-          cities: activeCityIds.size,
-        },
-
-        cities,
-      });
-    },
-  ),
-);
+  return Response.json({ items, total, summary, cities });
+}));
