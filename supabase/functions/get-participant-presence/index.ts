@@ -3,9 +3,9 @@ import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
 import { readParticipantIdParam } from "../_shared/participant.ts";
+import { isPresent } from "../_shared/presence.ts";
 
 const LAST_MEETINGS = 5;
-const PRESENT_STATUSES = new Set(["present", "presente"]);
 
 // Presença da participante nos últimos encontros já realizados, em qualquer grupo.
 // Query string: participant_id.
@@ -45,11 +45,10 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const items = (meetings ?? []).map((meeting) => {
-    const status: string = meeting.meeting_group_users[0]?.presence_status ?? "";
     return {
       meeting_id: meeting.id,
       date: meeting.date,
-      present: PRESENT_STATUSES.has(status.trim().toLowerCase()),
+      present: isPresent(meeting.meeting_group_users[0]?.presence_status),
     };
   });
 

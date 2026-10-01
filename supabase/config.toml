@@ -469,6 +469,21 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/get-meeting-details/deno.json"
 
+[functions.get-group-details-web]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-group-details-web/index.ts"
+
+[functions.get-group-participants-web]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-group-participants-web/index.ts"
+
+[functions.get-group-meetings-web]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-group-meetings-web/index.ts"
+
 [functions.add-meeting-photo]
 enabled = true
 verify_jwt = true

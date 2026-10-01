@@ -432,13 +432,17 @@ INSERT INTO public.groups (id, number, description, photo_id, city_id, zone_id, 
    NULL)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.group_users (id, group_id, user_id, is_coordinator, registration_status, last_consecutive_absences)
+INSERT INTO public.group_users (id, group_id, user_id, is_coordinator, registration_status, last_consecutive_absences, created_at)
 SELECT pg_temp.sid('gu', m.grp::text || ':' || m.usr::text),
        pg_temp.sid('group', m.grp::text),
        pg_temp.sid('user', m.usr::text),
        m.coord,
        pg_temp.k('registration_active'),
-       m.last_abs
+       m.last_abs,
+       -- Data de entrada variada (3 meses a ~2 anos atrás) e estável entre
+       -- resets, para a coluna "DATA DE ENTRADA" do painel web não ficar toda
+       -- igual.
+       now() - ((90 + ((m.grp * 37 + m.usr * 13) % 640)) || ' days')::interval
 FROM s_members m
 ON CONFLICT (id) DO NOTHING;
 
