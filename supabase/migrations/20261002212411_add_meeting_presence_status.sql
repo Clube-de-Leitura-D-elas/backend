@@ -18,7 +18,7 @@ ALTER COLUMN presence_status TYPE public.presence_status
 USING presence_status::text::public.presence_status;
 
 ALTER TABLE public.meeting_group_users
-ALTER COLUMN presence_status SET NOT NULL;
+ALTER COLUMN presence_status DROP DEFAULT;
 
 ALTER TABLE public.meeting_group_users
-ALTER COLUMN presence_status SET DEFAULT 'PRESENT';
+ALTER COLUMN presence_status DROP NOT NULL;
