@@ -520,13 +520,22 @@ ON CONFLICT (id) DO NOTHING;
 -- ---------------------------------------------------------
 
 -- Presença: só nos encontros realizados
-INSERT INTO public.meeting_group_users (id, group_user_id, meeting_id, presence_status)
-SELECT pg_temp.sid('mgu', m.key || ':' || mem.usr::text),
-       pg_temp.sid('gu', mem.grp::text || ':' || mem.usr::text),
-       pg_temp.sid('meeting', m.key),
-       CASE WHEN EXISTS (SELECT 1 FROM s_absences a WHERE a.meeting = m.key AND a.usr = mem.usr)
-            THEN pg_temp.k('presence_absent')
-            ELSE pg_temp.k('presence_present') END
+INSERT INTO public.meeting_group_users
+    (id, group_user_id, meeting_id, presence_status)
+SELECT
+    pg_temp.sid('mgu', m.key || ':' || mem.usr::text),
+    pg_temp.sid('gu', mem.grp::text || ':' || mem.usr::text),
+    pg_temp.sid('meeting', m.key),
+    CASE
+        WHEN EXISTS (
+            SELECT 1
+            FROM s_absences a
+            WHERE a.meeting = m.key
+              AND a.usr = mem.usr
+        )
+        THEN pg_temp.k('presence_absent')
+        ELSE pg_temp.k('presence_present')
+    END::public.presence_status
 FROM s_meetings m
 JOIN s_members mem ON mem.grp = m.grp
 WHERE m.status = 'CONCLUDED'
