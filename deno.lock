@@ -1,0 +1,22 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@supabase/functions-js@*": "2.117.2",
+    "jsr:@supabase/server@1": "1.8.1"
+  },
+  "jsr": {
+    "@supabase/functions-js@2.117.2": {
+      "integrity": "add71f09607b7f59af7de7a66a560ccac4fa70cbddb67d8919e536357aaa5dd2"
+    },
+    "@supabase/server@1.8.1": {
+      "integrity": "c853564d19bb62b7261237bc8067d939ea5d121f229fe1474e6bd37a2f2b2574"
+    }
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:supabase@^2.116.0"
+      ]
+    }
+  }
+}

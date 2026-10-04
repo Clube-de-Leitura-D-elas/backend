@@ -121,6 +121,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       {
         meeting_id: meeting.id,
         group_user_id: membership.id,
+        presence_status: "PENDING",
         invitation_status: invitationStatus,
       },
       { onConflict: "meeting_id,group_user_id" },
