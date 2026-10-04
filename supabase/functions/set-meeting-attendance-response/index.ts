@@ -3,7 +3,7 @@ import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
-const ALLOWED_PRESENCE_STATUSES = new Set(["PRESENT", "ABSENT"]);
+const ALLOWED_INVITATION_STATUSES = new Set(["CONFIRMED", "DECLINED"]);
 
 type MembershipRow = {
   id: string;
@@ -20,7 +20,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { meeting_id?: unknown; presence_status?: unknown } | null;
+  let body: { meeting_id?: unknown; invitation_status?: unknown } | null;
   try {
     body = await req.json();
   } catch {
@@ -28,18 +28,18 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const meetingId = body?.meeting_id;
-  const presenceStatus = body?.presence_status;
+  const invitationStatus = body?.invitation_status;
   if (!isUuid(meetingId)) {
     return Response.json({ error: 'missing/invalid "meeting_id"' }, {
       status: 400,
     });
   }
   if (
-    typeof presenceStatus !== "string" ||
-    !ALLOWED_PRESENCE_STATUSES.has(presenceStatus)
+    typeof invitationStatus !== "string" ||
+    !ALLOWED_INVITATION_STATUSES.has(invitationStatus)
   ) {
     return Response.json(
-      { error: 'missing/invalid "presence_status"' },
+      { error: 'missing/invalid "invitation_status"' },
       { status: 400 },
     );
   }
@@ -121,11 +121,12 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       {
         meeting_id: meeting.id,
         group_user_id: membership.id,
-        presence_status: presenceStatus,
+        presence_status: "PENDING",
+        invitation_status: invitationStatus,
       },
       { onConflict: "meeting_id,group_user_id" },
     )
-    .select("meeting_id, presence_status")
+    .select("meeting_id, invitation_status")
     .single();
 
   if (responseError) {
@@ -140,6 +141,6 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   return Response.json({
     meeting_id: response.meeting_id,
-    presence_status: response.presence_status,
+    invitation_status: response.invitation_status,
   });
 }));
