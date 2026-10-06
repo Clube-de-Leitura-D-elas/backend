@@ -5,7 +5,7 @@ import { requireFounder } from "../_shared/founder.ts";
 import { oneLine } from "../_shared/log.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
-// Aceita "43" ou "Grupo 43": o campo "Nome do grupo" do modal é o número.
+// Aceita "43" ou "Grupo 43": o campo "Número do grupo" do modal.
 const GROUP_NUMBER = /^(?:grupo\s*)?(\d{1,9})$/i;
 const UNIQUE_VIOLATION = "23505";
 
