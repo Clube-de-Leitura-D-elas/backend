@@ -92,6 +92,19 @@ app, `get-group-details-web` serve o painel — para que mudar o contrato de uma
 As funções do painel também leem a query string em camelCase (`groupId`, `pageSize`, `cityId`),
 que é o formato que o front envia, e devolvem listas paginadas como `{ items, total }`.
 
+### Criação de grupo
+
+`create-group` exige JWT de uma usuária `FOUNDER` e aceita somente `POST` com o formato do modal
+do painel: `{ "name": "43", "cityId": "<uuid>", "coordinatorId": "<uuid>" | null }`.
+
+- `name` é o número do grupo (`"43"` ou `"Grupo 43"`) e precisa ser único em todo o clube (409).
+- `cityId` pode ser o id de uma cidade ou de uma zona; com zona, a cidade vem da zona. A descrição
+  do grupo é o nome do lugar escolhido.
+- `coordinatorId` é opcional e precisa ser uma participante ativa (`users.id`).
+
+Grupo e coordenadora são criados numa transação só (`public.create_group`). Responde `201` com
+`{ id, number, description, cityId, zoneId, coordinatorId, createdAt }`.
+
 ### Resposta de presença
 
 `set-meeting-attendance-response` exige JWT e aceita somente `POST` com
