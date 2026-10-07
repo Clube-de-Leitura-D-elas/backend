@@ -48,7 +48,7 @@ INSERT INTO s_const (k, v) VALUES
   ('registration_active', 'ACTIVE'),   -- group_users.registration_status
   ('presence_present',    'PRESENT'),  -- meeting_group_users.presence_status
   ('presence_absent',     'ABSENT'),
-  ('suggestion_active',   'ACTIVE'),   -- book_suggestions.book_status (indicação concorrendo)
+  ('suggestion_available',   'AVAILABLE'),   -- book_suggestions.book_status (indicação concorrendo)
   ('suggestion_drawn',    'DRAWN');    -- book_suggestions.book_status (já sorteado)
 
 CREATE OR REPLACE FUNCTION pg_temp.k(key text) RETURNS text
@@ -501,7 +501,7 @@ SELECT pg_temp.sid('sug', 'drawn:' || m.key),
        pg_temp.sid('book', m.book::text),
        pg_temp.sid('gu', m.grp::text || ':' || m.host::text),
        COALESCE(pg_temp.slot(m.day_offset, 9), now()) - interval '40 days',
-       pg_temp.k('suggestion_drawn')
+       pg_temp.k('suggestion_drawn')::public.book_status
 FROM s_meetings m
 ON CONFLICT (id) DO NOTHING;
 
@@ -511,7 +511,7 @@ SELECT pg_temp.sid('sug', 'active:' || s.grp::text || ':' || s.book::text),
        pg_temp.sid('book', s.book::text),
        pg_temp.sid('gu', s.grp::text || ':' || s.usr::text),
        now() - s.days_ago * interval '1 day',
-       pg_temp.k('suggestion_active')
+       pg_temp.k('suggestion_available')::public.book_status
 FROM s_sugs s
 ON CONFLICT (id) DO NOTHING;
 
