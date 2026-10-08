@@ -555,11 +555,10 @@ INSERT INTO public.meeting_guests (id, meeting_id, user_id) VALUES
   (pg_temp.sid('guest', 'g1-m5:12'), pg_temp.sid('meeting', 'g1-m5'), pg_temp.sid('user', '12'))
 ON CONFLICT (id) DO NOTHING;
 
--- Avaliações dos encontros realizados: ~3/4 das presentes avaliam, ~1/3 com texto.
+-- Avaliações dos livros lidos: ~3/4 das presentes avaliam, ~1/3 com texto.
 -- Nota entre 3.0 e 5.0 (passo 0.5), determinística por encontro+participante.
-INSERT INTO public.book_reviews (id, meeting_id, user_id, book_rating, book_review, evaluated_at, book_id)
+INSERT INTO public.book_reviews (id, user_id, book_rating, book_review, evaluated_at, book_id)
 SELECT pg_temp.sid('review', m.key || ':' || mem.usr::text),
-       pg_temp.sid('meeting', m.key),
        pg_temp.sid('user', mem.usr::text),
        (3 + ((x.h / 7) % 5) * 0.5)::real,
        CASE WHEN x.h % 3 = 0 THEN (ARRAY[
@@ -586,15 +585,15 @@ WHERE m.status = 'CONCLUDED'
   AND NOT EXISTS (SELECT 1 FROM s_absences a WHERE a.meeting = m.key AND a.usr = mem.usr)
 ON CONFLICT (id) DO NOTHING;
 
--- Avaliações avulsas (sem encontro), incluindo um texto longo para testar quebra de linha
-INSERT INTO public.book_reviews (id, meeting_id, user_id, book_rating, book_review, evaluated_at, book_id) VALUES
-  (pg_temp.sid('review', 'manual-1'), NULL, pg_temp.sid('user', '1'),  4.5,
+-- Avaliações avulsas, incluindo um texto longo para testar quebra de linha
+INSERT INTO public.book_reviews (id, user_id, book_rating, book_review, evaluated_at, book_id) VALUES
+  (pg_temp.sid('review', 'manual-1'), pg_temp.sid('user', '1'),  4.5,
    'Li antes de indicar para o grupo e já sabia que ia render conversa.',
    now() - interval '30 days', pg_temp.sid('book', '15')),
-  (pg_temp.sid('review', 'manual-2'), NULL, pg_temp.sid('user', '14'), 5.0,
+  (pg_temp.sid('review', 'manual-2'), pg_temp.sid('user', '14'), 5.0,
    'Um livro curto, direto e que deveria ser leitura obrigatória. Terminei em uma tarde, mas voltei a ele várias vezes nos dias seguintes para reler trechos e anotar perguntas para levar ao grupo. Já emprestei meu exemplar para três amigas e todas quiseram comprar o próprio.',
    now() - interval '20 days', pg_temp.sid('book', '24')),
-  (pg_temp.sid('review', 'manual-3'), NULL, pg_temp.sid('user', '23'), 5.0,
+  (pg_temp.sid('review', 'manual-3'), pg_temp.sid('user', '23'), 5.0,
    NULL,
    now() - interval '55 days', pg_temp.sid('book', '1'))
 ON CONFLICT (id) DO NOTHING;
