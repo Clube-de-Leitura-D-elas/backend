@@ -437,7 +437,7 @@ SELECT pg_temp.sid('gu', m.grp::text || ':' || m.usr::text),
        pg_temp.sid('group', m.grp::text),
        pg_temp.sid('user', m.usr::text),
        m.coord,
-       pg_temp.k('registration_active'),
+       pg_temp.k('registration_active')::public.registration_status,
        m.last_abs,
        -- Data de entrada variada (3 meses a ~2 anos atrás) e estável entre
        -- resets, para a coluna "DATA DE ENTRADA" do painel web não ficar toda
