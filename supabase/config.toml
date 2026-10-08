@@ -454,6 +454,11 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/create-group/deno.json"
 
+[functions.get-group-form-options]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-group-form-options/deno.json"
+
 [functions.get-my-groups]
 enabled = true
 verify_jwt = true
