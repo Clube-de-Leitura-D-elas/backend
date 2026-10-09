@@ -2,8 +2,7 @@ DO $$ BEGIN
 CREATE TYPE public.registration_status AS ENUM (
     'ACTIVE',
     'PENDING',
-    'INACTIVE',
-    'GUEST'
+    'INACTIVE'
 );
 EXCEPTION
     WHEN duplicate_object THEN null;
