@@ -1,8 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { type SupabaseContext, withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
-import { requireGroupMemberProfile } from "../_shared/group.ts";
-import { findMeetingGroupId } from "../_shared/meeting.ts";
+import {
+  isGroupCoordinatorOrMeetingHost,
+  requireGroupMemberProfile,
+} from "../_shared/group.ts";
+import { findMeetingGroupIdAndHostId } from "../_shared/meeting.ts";
 import {
   MEETING_PHOTOS_BUCKET,
   signMeetingPhotos,
@@ -38,17 +41,35 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const request = await readPhotoRequest(req);
   if (request instanceof Response) return request;
 
-  const groupId = await findMeetingGroupId(
+  const meeting = await findMeetingGroupIdAndHostId(
     ctx,
     request.meetingId,
     "add-meeting-photo",
   );
-  if (groupId instanceof Response) return groupId;
+  if (meeting instanceof Response) return meeting;
 
-  const member = await requireGroupMemberProfile(ctx, groupId, {
-    activeOnly: true,
-  });
+  const member = await requireGroupMemberProfile(
+    ctx,
+    meeting.groupId,
+    { activeOnly: true },
+  );
   if (member instanceof Response) return member;
+
+  const result = await isGroupCoordinatorOrMeetingHost(
+    ctx,
+    meeting.groupId,
+    member.profileId,
+    meeting.hostId,
+    "add-meeting-photo",
+  );
+  if (result instanceof Response) return result;
+  if (!result) {
+    return Response.json({
+      error: "Forbidden: group coordinators or meeting host only.",
+    }, {
+      status: 403,
+    });
+  }
 
   const existing = await findExistingPhoto(ctx, req, request);
   if (existing) return existing;

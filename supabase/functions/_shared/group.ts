@@ -112,3 +112,29 @@ export async function requireGroupMemberProfile(
 
   return { profileId: profile.id };
 }
+
+export async function isGroupCoordinatorOrMeetingHost(
+  ctx: SupabaseContext<Database>,
+  groupId: string,
+  userId: string,
+  hostId: string,
+  logLabel: string,
+): Promise<boolean | Response> {
+  const { data: user, error: userError } = await ctx.supabaseAdmin
+    .from("group_users")
+    .select("id")
+    .eq("group_id", groupId)
+    .eq("user_id", userId)
+    .or(`is_coordinator.eq.true,id.eq.${hostId}`)
+    .maybeSingle();
+
+  if (userError) {
+    console.error(
+      `${logLabel} membership error`,
+      userError.message.replace(/[\r\n]/g, " "),
+    );
+    return Response.json({ error: userError.message }, { status: 500 });
+  }
+
+  return user !== null;
+}
