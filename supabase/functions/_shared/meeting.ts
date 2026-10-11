@@ -9,7 +9,9 @@ import { isUuid } from "./uuid.ts";
 export function readMeetingIdParam(url: URL): string | Response {
   const id = url.searchParams.get("meeting_id");
   if (!isUuid(id)) {
-    return Response.json({ error: 'missing/invalid "meeting_id"' }, { status: 400 });
+    return Response.json({ error: 'missing/invalid "meeting_id"' }, {
+      status: 400,
+    });
   }
   return id;
 }
@@ -26,7 +28,10 @@ export async function findMeetingGroupId(
     .maybeSingle();
 
   if (error) {
-    console.error(`${logLabel} meeting error`, error.message.replace(/[\r\n]/g, " "));
+    console.error(
+      `${logLabel} meeting error`,
+      error.message.replace(/[\r\n]/g, " "),
+    );
     return Response.json({ error: error.message }, { status: 500 });
   }
 
@@ -35,4 +40,33 @@ export async function findMeetingGroupId(
   }
 
   return data.group_id as string;
+}
+
+export async function findMeetingGroupIdAndHostId(
+  ctx: SupabaseContext<Database>,
+  meetingId: string,
+  logLabel: string,
+): Promise<{ groupId: string; hostId: string } | Response> {
+  const { data, error } = await ctx.supabaseAdmin
+    .from("meetings")
+    .select("group_id, host_id")
+    .eq("id", meetingId)
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      `${logLabel} meeting error`,
+      error.message.replace(/[\r\n]/g, " "),
+    );
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+
+  if (!data) {
+    return Response.json({ error: "meeting not found" }, { status: 404 });
+  }
+
+  return {
+    groupId: data.group_id as string,
+    hostId: data.host_id as string,
+  };
 }
