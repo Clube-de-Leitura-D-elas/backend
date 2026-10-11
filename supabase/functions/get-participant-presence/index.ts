@@ -16,25 +16,10 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const participantId = readParticipantIdParam(new URL(req.url));
   if (participantId instanceof Response) return participantId;
 
-  const { data: memberships, error: membershipsError } = await ctx.supabaseAdmin
-    .from("group_users")
-    .select("id")
-    .eq("user_id", participantId);
-
-  if (membershipsError) {
-    console.error("get-participant-presence memberships error", membershipsError);
-    return Response.json({ error: membershipsError.message }, { status: 400 });
-  }
-
-  const membershipIds = (memberships ?? []).map((membership) => membership.id);
-  if (membershipIds.length === 0) {
-    return Response.json({ items: [] });
-  }
-
   const { data: meetings, error } = await ctx.supabaseAdmin
     .from("meetings")
-    .select("id, date, meeting_group_users!inner(group_user_id, presence_status)")
-    .in("meeting_group_users.group_user_id", membershipIds)
+    .select("id, date, meeting_users!inner(user_id, presence_status)")
+    .eq("meeting_users.user_id", participantId)
     .lte("date", new Date().toISOString())
     .order("date", { ascending: false })
     .limit(LAST_MEETINGS);
@@ -48,7 +33,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return {
       meeting_id: meeting.id,
       date: meeting.date,
-      present: isPresent(meeting.meeting_group_users[0]?.presence_status),
+      present: isPresent(meeting.meeting_users[0]?.presence_status),
     };
   });
 
