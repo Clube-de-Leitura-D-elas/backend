@@ -18,7 +18,7 @@ type MeetingRow = {
   locations: { name: string; address: string } | null;
   books: { name: string };
   host: { users: { name: string } };
-  meeting_users: { user_id: string }[];
+  meeting_users: { user_id: string; invitation_status: string }[];
 };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
@@ -86,7 +86,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
   const { data: meetingData, error: meetingsError } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
-      "id, group_id, date, locations(name, address), books!inner(name), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_users(user_id)",
+      "id, group_id, date, locations(name, address), books!inner(name), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_users(user_id, invitation_status)",
     )
     .in("group_id", groupIds)
     .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
@@ -121,6 +121,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     groups: groups.map((group) => {
       const city = group.cities;
       const meeting = nextMeetingByGroupId.get(group.id);
+      const myAttendance = meeting?.meeting_users.find(
+        (attendance) => attendance.user_id === profile.id,
+      );
       return {
         id: group.id,
         number: group.number,
@@ -134,6 +137,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
             book_title: meeting.books.name,
             date: meeting.date,
             location: meeting.locations?.name ?? "",
+            invitation_status: myAttendance?.invitation_status ?? "PENDING",
           }
           : null,
         has_pending_response: meeting

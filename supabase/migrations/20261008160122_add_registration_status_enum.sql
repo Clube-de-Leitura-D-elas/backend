@@ -1,12 +1,16 @@
 DO $$ BEGIN
-CREATE TYPE public.registration_status AS ENUM (
+  CREATE TYPE public.registration_status AS ENUM (
     'ACTIVE',
     'PENDING',
     'INACTIVE'
-);
+  );
 EXCEPTION
-    WHEN duplicate_object THEN null;
+  WHEN duplicate_object THEN NULL;
 END $$;
+
+UPDATE public.group_users
+SET registration_status = 'PENDING'
+WHERE registration_status = '<STATUS>';
 
 ALTER TABLE public.group_users
 ALTER COLUMN registration_status TYPE public.registration_status
