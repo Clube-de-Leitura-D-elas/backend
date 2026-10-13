@@ -1,8 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
-import { requireGroupMember } from "../_shared/group.ts";
-import { findMeetingGroupId, readMeetingIdParam } from "../_shared/meeting.ts";
+import {
+  isGroupCoordinatorOrMeetingHost,
+  requireGroupMemberProfile,
+} from "../_shared/group.ts";
+import {
+  findMeetingGroupIdAndHostId,
+  readMeetingIdParam,
+} from "../_shared/meeting.ts";
 import {
   type MeetingPhoto,
   signMeetingPhotos,
@@ -17,15 +23,26 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const meetingId = readMeetingIdParam(new URL(req.url));
   if (meetingId instanceof Response) return meetingId;
 
-  const groupId = await findMeetingGroupId(
+  const meeting = await findMeetingGroupIdAndHostId(
     ctx,
     meetingId,
     "get-meeting-photos",
   );
-  if (groupId instanceof Response) return groupId;
+  if (meeting instanceof Response) return meeting;
 
-  const denied = await requireGroupMember(ctx, groupId);
-  if (denied) return denied;
+  const member = await requireGroupMemberProfile(ctx, meeting.groupId);
+  if (member instanceof Response) return member;
+
+  // Mesma regra da add-meeting-photo: o app usa este campo para mostrar ou
+  // esconder o botão de adicionar foto.
+  const canAddPhotos = await isGroupCoordinatorOrMeetingHost(
+    ctx,
+    meeting.groupId,
+    member.profileId,
+    meeting.hostId,
+    "get-meeting-photos",
+  );
+  if (canAddPhotos instanceof Response) return canAddPhotos;
 
   const { data, error } = await ctx.supabaseAdmin
     .from("meeting_photos")
@@ -56,5 +73,5 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const signed = await signMeetingPhotos(ctx, req, meetingId, photos);
   if (signed instanceof Response) return signed;
 
-  return Response.json({ photos: signed });
+  return Response.json({ photos: signed, can_add_photos: canAddPhotos });
 }));
