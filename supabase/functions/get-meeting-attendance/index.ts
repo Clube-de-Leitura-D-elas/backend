@@ -36,9 +36,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     });
   }
 
-  
-const { data: attendance, error: attendanceError } =
-  await ctx.supabaseAdmin
+  const { data: attendance, error: attendanceError } = await ctx.supabaseAdmin
     .from("meeting_group_users")
     .select(`
       group_user_id,
@@ -50,42 +48,42 @@ const { data: attendance, error: attendanceError } =
     `)
     .eq("meeting_id", meetingId);
 
-if (attendanceError) {
-  console.error(
-    "get-meeting-attendance attendance error",
-    attendanceError.message.replace(/[\r\n]/g, " "),
-  );
+  if (attendanceError) {
+    console.error(
+      "get-meeting-attendance attendance error",
+      attendanceError.message.replace(/[\r\n]/g, " "),
+    );
 
-  return Response.json(
-    { error: "Unable to load meeting attendance" },
-    { status: 500 },
-  );
-}
+    return Response.json(
+      { error: "Unable to load meeting attendance" },
+      { status: 500 },
+    );
+  }
 
-type MeetingAttendanceRow = {
-  group_users: {
-    user_id: string;
+  type MeetingAttendanceRow = {
+    group_users: {
+      user_id: string;
+    };
+    invitation_status: "PENDING" | "CONFIRMED" | "DECLINED";
+    presence_status: "PRESENT" | "ABSENT" | null;
   };
-  invitation_status: "PENDING" | "CONFIRMED" | "DECLINED";
-  presence_status: "PRESENT" | "ABSENT" | null;
-};
 
+  const attendanceRows =
+    (attendance ?? []) as unknown as MeetingAttendanceRow[];
 
-const attendanceRows: MeetingAttendanceRow[] = attendance ?? [];
+  const invitationMap = new Map(
+    attendanceRows.map((row) => [
+      row.group_users.user_id,
+      row.invitation_status,
+    ]),
+  );
 
-const invitationMap = new Map(
-  attendanceRows.map((row) => [
-    row.group_users.user_id,
-    row.invitation_status,
-  ]),
-);
-
-const presenceMap = new Map(
-  attendanceRows.map((row) => [
-    row.group_users.user_id,
-    row.presence_status,
-  ]),
-);
+  const presenceMap = new Map(
+    attendanceRows.map((row) => [
+      row.group_users.user_id,
+      row.presence_status,
+    ]),
+  );
 
   const attendanceList = (groupUsers ?? []).map((row: any) => {
     return {
