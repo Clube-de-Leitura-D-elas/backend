@@ -1,17 +1,23 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
-import { requireGroupMember } from "../_shared/group.ts";
+import {
+  isGroupCoordinatorOrMeetingHost,
+  requireGroupMemberProfile,
+} from "../_shared/group.ts";
 import { readMeetingIdParam } from "../_shared/meeting.ts";
+
+const EDITABLE_STATUSES = ["CREATED", "SCHEDULED"];
 
 type MeetingRow = {
   id: string;
   group_id: string;
+  host_id: string;
   date: string | null;
   status: string;
   description: string | null;
   books: { name: string; photos: { url: string } | null };
-  locations: { name: string; address: string } | null;
+  locations: { name: string; address: string | null } | null;
   host: { users: { name: string } };
   meeting_photos: { is_cover: boolean; photos: { url: string } | null }[];
 };
@@ -23,7 +29,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
-      "id, group_id, date, status, description, books!inner(name, photos(url)), locations(name, address), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_photos(is_cover, photos(url))",
+      "id, group_id, host_id, date, status, description, books!inner(name, photos(url)), locations(name, address), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_photos(is_cover, photos(url))",
     )
     .eq("id", meetingId)
     .maybeSingle();
@@ -42,8 +48,21 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const meeting = data as unknown as MeetingRow;
 
-  const denied = await requireGroupMember(ctx, meeting.group_id);
-  if (denied) return denied;
+  const member = await requireGroupMemberProfile(ctx, meeting.group_id);
+  if (member instanceof Response) return member;
+
+  let canEdit = false;
+  if (EDITABLE_STATUSES.includes(meeting.status)) {
+    const allowed = await isGroupCoordinatorOrMeetingHost(
+      ctx,
+      meeting.group_id,
+      member.profileId,
+      meeting.host_id,
+      "get-meeting-details",
+    );
+    if (allowed instanceof Response) return allowed;
+    canEdit = allowed;
+  }
 
   // "Encontro N": posição do encontro na ordem cronológica dos encontros do
   // grupo que já têm data. Rascunho sem data não tem número.
@@ -82,5 +101,6 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     host_name: meeting.host.users.name,
     location_name: meeting.locations?.name ?? null,
     location_address: meeting.locations?.address ?? null,
+    can_edit: canEdit,
   });
 }));

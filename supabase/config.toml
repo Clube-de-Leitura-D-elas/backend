@@ -504,6 +504,11 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/get-meeting-photos/deno.json"
 
+[functions.update-meeting]
+enabled = true
+verify_jwt = true
+import_map = "./functions/update-meeting/deno.json"
+
 [functions.get-groups-web]
 enabled = true
 verify_jwt = true
