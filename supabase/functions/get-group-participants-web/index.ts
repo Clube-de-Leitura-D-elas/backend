@@ -17,7 +17,6 @@ type ParticipantRow = {
   email: string | null;
   // O filtro por `group_id` no embed com !inner deixa exatamente um vínculo.
   memberships: {
-    id: string;
     is_coordinator: boolean;
     created_at: string | null;
   }[];
@@ -25,7 +24,7 @@ type ParticipantRow = {
 
 type PresenceRow = {
   meeting_id: string;
-  group_user_id: string;
+  user_id: string;
   presence_status: string | null;
 };
 
@@ -53,7 +52,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error, count } = await ctx.supabaseAdmin
     .from("users")
     .select(
-      "id, name, email, memberships:group_users!inner(id, is_coordinator, created_at, group_id)",
+      "id, name, email, memberships:group_users!inner(is_coordinator, created_at, group_id)",
       { count: "exact" },
     )
     .eq("memberships.group_id", groupId)
@@ -93,18 +92,17 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const meetingIds = (meetingData ?? []).map((meeting) => meeting.id).reverse();
-  const membershipIds = rows
-    .map((row) => row.memberships[0]?.id)
-    .filter((id): id is string => Boolean(id));
+  const userIds = rows
+    .map((row) => row.id);
 
   const marks = new Map<string, "P" | "F">();
 
-  if (meetingIds.length > 0 && membershipIds.length > 0) {
+  if (meetingIds.length > 0 && userIds.length > 0) {
     const { data: presenceData, error: presenceError } = await ctx.supabaseAdmin
-      .from("meeting_group_users")
-      .select("meeting_id, group_user_id, presence_status")
+      .from("meeting_users")
+      .select("meeting_id, user_id, presence_status")
       .in("meeting_id", meetingIds)
-      .in("group_user_id", membershipIds);
+      .in("user_id", userIds);
 
     if (presenceError) {
       console.error(
@@ -116,7 +114,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
     for (const row of (presenceData ?? []) as unknown as PresenceRow[]) {
       marks.set(
-        `${row.group_user_id}:${row.meeting_id}`,
+        `${row.user_id}:${row.meeting_id}`,
         isPresent(row.presence_status) ? "P" : "F",
       );
     }
@@ -132,7 +130,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       // Quem entrou depois não tem registro no encontro: a bolinha fica fora
       // em vez de virar uma falta que não existiu.
       attendance: meetingIds
-        .map((meetingId) => marks.get(`${membership?.id}:${meetingId}`))
+        .map((meetingId) => marks.get(`${row.id}:${meetingId}`))
         .filter((mark): mark is "P" | "F" => mark !== undefined),
       email: row.email,
       is_coordinator: membership?.is_coordinator ?? false,
