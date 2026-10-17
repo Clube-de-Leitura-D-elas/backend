@@ -52,6 +52,6 @@ Deno.serve(
     if (!data) {
       return Response.json({ error: "group not found" }, { status: 404 });
     }
-    return Response.json({ isActive: data.active });
+    return Response.json({ is_active: data.active });
   }),
 );
