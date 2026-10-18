@@ -1,5 +1,5 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { withSupabase } from "jsr:@supabase/server@^1";
+import "@supabase/functions-js/edge-runtime.d.ts";
+import { withSupabase } from "@supabase/server";
 import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
 import { readParticipantIdParam } from "../_shared/participant.ts";
@@ -13,6 +13,7 @@ type ParticipantRow = {
   birth_date: string;
   job: string | null;
   is_active: boolean;
+  app_role: string;
   cities: { name: string } | null;
   zones: { name: string } | null;
 };
@@ -28,7 +29,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("users")
     .select(
-      "id, name, phone, instagram, email, birth_date, job, is_active, cities(name), zones(name)",
+      "id, name, phone, instagram, email, birth_date, job, is_active, app_role, cities(name), zones(name)",
     )
     .eq("id", participantId)
     .maybeSingle();
