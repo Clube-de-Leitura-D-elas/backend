@@ -3,7 +3,6 @@ import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 
 type MembershipRow = {
-  id: string;
   groups: {
     id: string;
     number: number;
@@ -19,7 +18,7 @@ type MeetingRow = {
   locations: { name: string; address: string } | null;
   books: { name: string };
   host: { users: { name: string } };
-  meeting_group_users: { group_user_id: string, invitation_status: string}[];
+  meeting_users: { user_id: string; invitation_status: string }[];
 };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
@@ -46,7 +45,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("group_users")
     .select(
-      "id, group_id, groups!inner(id, number, cities(name, uf), photos(url))",
+      "group_id, groups!inner(id, number, cities(name, uf), photos(url))",
     )
     .eq("user_id", profile.id)
     .eq("groups.active", true)
@@ -87,7 +86,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
   const { data: meetingData, error: meetingsError } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
-      "id, group_id, date, locations(name, address), books!inner(name), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_group_users(group_user_id, invitation_status)",
+      "id, group_id, date, locations(name, address), books!inner(name), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_users(user_id, invitation_status)",
     )
     .in("group_id", groupIds)
     .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
@@ -103,9 +102,6 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     return Response.json({ error: meetingsError.message }, { status: 500 });
   }
 
-  const membershipIdByGroupId = new Map(
-    memberships.map((membership) => [membership.groups.id, membership.id]),
-  );
   const nextMeetingByGroupId = new Map<string, MeetingRow>();
   for (const meeting of (meetingData ?? []) as unknown as MeetingRow[]) {
     if (!nextMeetingByGroupId.has(meeting.group_id)) {
@@ -125,9 +121,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     groups: groups.map((group) => {
       const city = group.cities;
       const meeting = nextMeetingByGroupId.get(group.id);
-      const membershipId = membershipIdByGroupId.get(group.id);
-      const myAttendance = meeting?.meeting_group_users.find(
-        (attendance) => attendance.group_user_id === membershipId,
+      const myAttendance = meeting?.meeting_users.find(
+        (attendance) => attendance.user_id === profile.id,
       );
       return {
         id: group.id,
@@ -146,8 +141,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
           }
           : null,
         has_pending_response: meeting
-          ? !meeting.meeting_group_users.some(
-            (attendance) => attendance.group_user_id === membershipId,
+          ? !meeting.meeting_users.some(
+            (attendance) => attendance.user_id === profile.id,
           )
           : false,
       };

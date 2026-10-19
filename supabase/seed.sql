@@ -46,7 +46,7 @@ DROP TABLE IF EXISTS s_const;
 CREATE TEMP TABLE s_const (k text PRIMARY KEY, v text NOT NULL);
 INSERT INTO s_const (k, v) VALUES
   ('registration_active', 'ACTIVE'),   -- group_users.registration_status
-  ('presence_present',    'PRESENT'),  -- meeting_group_users.presence_status
+  ('presence_present',    'PRESENT'),  -- meeting_users.presence_status
   ('presence_absent',     'ABSENT'),
   ('suggestion_available',   'AVAILABLE'),   -- book_suggestions.book_status (indicação concorrendo)
   ('suggestion_drawn',    'DRAWN');    -- book_suggestions.book_status (já sorteado)
@@ -520,11 +520,11 @@ ON CONFLICT (id) DO NOTHING;
 -- ---------------------------------------------------------
 
 -- Presença: só nos encontros realizados
-INSERT INTO public.meeting_group_users
-    (id, group_user_id, meeting_id, presence_status)
+INSERT INTO public.meeting_users
+    (id, user_id, meeting_id, presence_status)
 SELECT
     pg_temp.sid('mgu', m.key || ':' || mem.usr::text),
-    pg_temp.sid('gu', mem.grp::text || ':' || mem.usr::text),
+    pg_temp.sid('user', mem.usr::text),
     pg_temp.sid('meeting', m.key),
     CASE
         WHEN EXISTS (
@@ -548,11 +548,14 @@ SELECT pg_temp.sid('photo', 'meeting-' || mp.meeting || '-' || mp.idx),
 FROM s_meeting_photos mp
 ON CONFLICT (photo_id) DO NOTHING;
 
--- Convidadas (participantes de outro grupo que foram como convidadas)
-INSERT INTO public.meeting_guests (id, meeting_id, user_id) VALUES
-  (pg_temp.sid('guest', 'g1-m4:6'),  pg_temp.sid('meeting', 'g1-m4'), pg_temp.sid('user', '6')),
-  (pg_temp.sid('guest', 'g3-m4:18'), pg_temp.sid('meeting', 'g3-m4'), pg_temp.sid('user', '18')),
-  (pg_temp.sid('guest', 'g1-m5:12'), pg_temp.sid('meeting', 'g1-m5'), pg_temp.sid('user', '12'))
+-- Convidadas (participantes de outro grupo que foram como convidadas). Seguem o
+-- mesmo fluxo das participantes em meeting_users: convite confirmado e, nos
+-- encontros já realizados, presença registrada; no encontro futuro, presença
+-- ainda vazia.
+INSERT INTO public.meeting_users (id, user_id, meeting_id, invitation_status, presence_status) VALUES
+  (pg_temp.sid('guest', 'g1-m4:6'),  pg_temp.sid('user', '6'),  pg_temp.sid('meeting', 'g1-m4'), 'CONFIRMED', 'PRESENT'),
+  (pg_temp.sid('guest', 'g3-m4:18'), pg_temp.sid('user', '18'), pg_temp.sid('meeting', 'g3-m4'), 'CONFIRMED', 'PRESENT'),
+  (pg_temp.sid('guest', 'g1-m5:12'), pg_temp.sid('user', '12'), pg_temp.sid('meeting', 'g1-m5'), 'CONFIRMED', NULL)
 ON CONFLICT (id) DO NOTHING;
 
 -- Avaliações dos livros lidos: ~3/4 das presentes avaliam, ~1/3 com texto.

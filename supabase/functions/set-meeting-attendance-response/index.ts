@@ -116,14 +116,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const { data: response, error: responseError } = await ctx.supabaseAdmin
-    .from("meeting_group_users")
+    .from("meeting_users")
     .upsert(
       {
         meeting_id: meeting.id,
-        group_user_id: membership.id,
+        user_id: profile.id,
         invitation_status: invitationStatus,
       },
-      { onConflict: "meeting_id,group_user_id" },
+      { onConflict: "meeting_id,user_id" },
     )
     .select("meeting_id, invitation_status")
     .single();
