@@ -45,7 +45,7 @@ Deno.serve(
       .maybeSingle();
 
     if (error) {
-      console.error("update-group-status error", error);
+      console.error("update-group-status-web error", error);
       return Response.json({ error: error.message }, { status: 500 });
     }
 
