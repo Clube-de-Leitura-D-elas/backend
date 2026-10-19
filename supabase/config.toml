@@ -513,3 +513,14 @@ import_map = "./functions/update-meeting/deno.json"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/get-groups-web/index.ts"
+
+[functions.search-places]
+enabled = true
+verify_jwt = true
+import_map = "./functions/search-places/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/search-places/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/search-places/*.html" ]

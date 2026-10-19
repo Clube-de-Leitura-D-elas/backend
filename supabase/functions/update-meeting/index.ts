@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { withSupabase } from "jsr:@supabase/server@^1";
+import { type SupabaseContext, withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
+import { getGooglePlace, isGooglePlaceId } from "../_shared/googlePlaces.ts";
 import {
   isGroupCoordinatorOrMeetingHost,
   requireGroupMemberProfile,
@@ -10,16 +11,15 @@ import { isUuid } from "../_shared/uuid.ts";
 
 const LOG_LABEL = "update-meeting";
 const EDITABLE_STATUSES = ["CREATED", "SCHEDULED"];
-const MAX_LOCATION_LENGTH = 200;
 const MAX_DESCRIPTION_LENGTH = 2000;
-// ISO 8601 com fuso explícito: "2026-10-20T19:30:00-03:00" ou "...Z".
+// ISO 8601 com fuso explícito: //"2026-10-20T19:30:00-03:00" ou "...Z".
 const ISO_DATE_WITH_OFFSET =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
 type UpdateMeetingRequest = {
   meetingId: string;
   date: string;
-  location: string;
+  googlePlaceId: string | null;
   description: string | null;
 };
 
@@ -29,8 +29,10 @@ type MeetingRow = {
   host_id: string;
   status: string;
   location_id: string | null;
-  locations: { name: string; address: string | null } | null;
+  locations: { google_place_id: string } | null;
 };
+
+type Ctx = SupabaseContext<Database>;
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "POST") {
@@ -43,7 +45,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
-      "id, group_id, host_id, status, location_id, locations(name, address)",
+      "id, group_id, host_id, status, location_id, locations(google_place_id)",
     )
     .eq("id", request.meetingId)
     .maybeSingle();
@@ -78,40 +80,30 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     }, { status: 403 });
   }
 
-  // Encontro em andamento ou concluído faz parte do histórico: não muda mais.
   if (!EDITABLE_STATUSES.includes(meeting.status)) {
     return Response.json({ error: "meeting can no longer be edited" }, {
       status: 409,
     });
   }
 
-  // O formulário mostra o local atual como "nome - endereço". Se o texto não
-  // mudou, mantém o registro existente em vez de criar um local repetido.
-  let locationId = meeting.location_id;
-  if (request.location !== currentLocationText(meeting)) {
-    const { data: location, error: locationError } = await ctx.supabaseAdmin
-      .from("locations")
-      .insert({ name: request.location })
-      .select("id")
-      .single();
-
-    if (locationError) {
-      console.error(
-        `${LOG_LABEL} location error`,
-        oneLine(locationError.message),
-      );
-      return Response.json({ error: locationError.message }, { status: 500 });
-    }
-
-    locationId = location.id as string;
+  if (!request.googlePlaceId && !meeting.location_id) {
+    return Response.json({ error: 'missing "google_place_id"' }, {
+      status: 400,
+    });
   }
 
-  // Rascunho que recebe data e local vira o próximo encontro confirmado.
-  // Encontro já confirmado continua confirmado.
+  let locationId = meeting.location_id;
+  if (
+    request.googlePlaceId &&
+    request.googlePlaceId !== meeting.locations?.google_place_id
+  ) {
+    const location = await findOrCreateLocation(ctx, request.googlePlaceId);
+    if (location instanceof Response) return location;
+    locationId = location;
+  }
+
   const status = meeting.status === "CREATED" ? "SCHEDULED" : meeting.status;
 
-  // O filtro de status evita sobrescrever um encontro que começou entre a
-  // leitura acima e esta escrita.
   const { data: updated, error: updateError } = await ctx.supabaseAdmin
     .from("meetings")
     .update({
@@ -170,11 +162,9 @@ async function readUpdateMeetingRequest(
     return Response.json({ error: 'missing/invalid "date"' }, { status: 400 });
   }
 
-  const location = typeof body.location === "string"
-    ? body.location.trim()
-    : "";
-  if (!location || location.length > MAX_LOCATION_LENGTH) {
-    return Response.json({ error: 'missing/invalid "location"' }, {
+  const googlePlaceId = body.google_place_id ?? null;
+  if (googlePlaceId !== null && !isGooglePlaceId(googlePlaceId)) {
+    return Response.json({ error: 'invalid "google_place_id"' }, {
       status: 400,
     });
   }
@@ -193,15 +183,48 @@ async function readUpdateMeetingRequest(
   return {
     meetingId,
     date: new Date(date).toISOString(),
-    location,
+    googlePlaceId,
     description,
   };
 }
 
-function currentLocationText(meeting: MeetingRow): string | null {
-  if (!meeting.locations) return null;
-  return [meeting.locations.name, meeting.locations.address]
-    .map((part) => part?.trim() ?? "")
-    .filter((part) => part.length > 0)
-    .join(" - ");
+async function findOrCreateLocation(
+  ctx: Ctx,
+  googlePlaceId: string,
+): Promise<string | Response> {
+  const { data: existing, error } = await ctx.supabaseAdmin
+    .from("locations")
+    .select("id")
+    .eq("google_place_id", googlePlaceId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`${LOG_LABEL} location lookup error`, oneLine(error.message));
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+
+  if (existing) return existing.id as string;
+
+  const place = await getGooglePlace(googlePlaceId, LOG_LABEL);
+  if (place instanceof Response) return place;
+
+  const { data: created, error: insertError } = await ctx.supabaseAdmin
+    .from("locations")
+    .insert({
+      name: place.name,
+      address: place.address,
+      google_place_id: place.googlePlaceId,
+      latitude: place.latitude,
+      longitude: place.longitude,
+    })
+    .select("id")
+    .single();
+
+  if (insertError) {
+    console.error(`${LOG_LABEL} location error`, oneLine(insertError.message));
+    return Response.json({ error: insertError.message }, { status: 500 });
+  }
+
+  return created.id as string;
 }
