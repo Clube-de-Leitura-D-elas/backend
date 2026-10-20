@@ -13,40 +13,43 @@ type ParticipantRow = {
   birth_date: string;
   job: string | null;
   is_active: boolean;
+  created_at: string;
   cities: { name: string } | null;
   zones: { name: string } | null;
 };
 
 // Dados do perfil de uma participante. Query string: participant_id.
-Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
-  const denied = await requireFounder(ctx);
-  if (denied) return denied;
+Deno.serve(
+  withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
+    const denied = await requireFounder(ctx);
+    if (denied) return denied;
 
-  const participantId = readParticipantIdParam(new URL(req.url));
-  if (participantId instanceof Response) return participantId;
+    const participantId = readParticipantIdParam(new URL(req.url));
+    if (participantId instanceof Response) return participantId;
 
-  const { data, error } = await ctx.supabaseAdmin
-    .from("users")
-    .select(
-      "id, name, phone, instagram, email, birth_date, job, is_active, cities(name), zones(name)",
-    )
-    .eq("id", participantId)
-    .maybeSingle();
+    const { data, error } = await ctx.supabaseAdmin
+      .from("users")
+      .select(
+        "id, name, phone, instagram, email, birth_date, job, is_active, created_at, cities(name), zones(name)",
+      )
+      .eq("id", participantId)
+      .maybeSingle();
 
-  if (error) {
-    console.error("get-participant error", error);
-    return Response.json({ error: error.message }, { status: 400 });
-  }
+    if (error) {
+      console.error("get-participant error", error);
+      return Response.json({ error: error.message }, { status: 400 });
+    }
 
-  if (!data) {
-    return Response.json({ error: "participant not found" }, { status: 404 });
-  }
+    if (!data) {
+      return Response.json({ error: "participant not found" }, { status: 404 });
+    }
 
-  const { cities, zones, ...participant } = data as unknown as ParticipantRow;
+    const { cities, zones, ...participant } = data as unknown as ParticipantRow;
 
-  return Response.json({
-    ...participant,
-    city: cities?.name ?? null,
-    zone: zones?.name ?? null,
-  });
-}));
+    return Response.json({
+      ...participant,
+      city: cities?.name ?? null,
+      zone: zones?.name ?? null,
+    });
+  }),
+);
