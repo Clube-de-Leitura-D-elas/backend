@@ -4,11 +4,12 @@ import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
 import { parseListParams } from "../_shared/pagination.ts";
 import { readParticipantIdParam } from "../_shared/participant.ts";
+import { toLocalDate } from "../_shared/date.ts";
 
 type MembershipRow = {
   id: string;
   is_coordinator: boolean;
-  created_at: string | null;
+  created_at: string;
   groups: { id: string; number: number; cities: { name: string } | null };
 };
 
@@ -45,7 +46,7 @@ Deno.serve(
       number: membership.groups.number,
       city: membership.groups.cities?.name ?? null,
       is_coordinator: membership.is_coordinator,
-      entry_date: membership.created_at ?? null,
+      entry_date: toLocalDate(membership.created_at),
     }));
 
     return Response.json({ items, total: count ?? 0 });

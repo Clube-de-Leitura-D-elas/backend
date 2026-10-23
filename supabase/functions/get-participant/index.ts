@@ -3,6 +3,7 @@ import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
 import { readParticipantIdParam } from "../_shared/participant.ts";
+import { toLocalDate } from "../_shared/date.ts";
 
 type ParticipantRow = {
   id: string;
@@ -44,10 +45,12 @@ Deno.serve(
       return Response.json({ error: "participant not found" }, { status: 404 });
     }
 
-    const { cities, zones, ...participant } = data as unknown as ParticipantRow;
+    const { cities, zones, created_at, ...participant } =
+      data as unknown as ParticipantRow;
 
     return Response.json({
       ...participant,
+      entry_date: toLocalDate(created_at),
       city: cities?.name ?? null,
       zone: zones?.name ?? null,
     });
