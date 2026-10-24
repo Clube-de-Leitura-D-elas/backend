@@ -23,6 +23,7 @@ type GroupRow = {
   description: string;
   active: boolean;
   cities: { name: string } | null;
+  zones: {name: string} | null;
 };
 
 type CoordinatorRow = {
@@ -52,7 +53,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { data: groupData, error: groupError } = await ctx.supabaseAdmin
     .from("groups")
-    .select("id, number, description, active, cities(name)")
+    .select("id, number, description, active, cities(name),zones(name)")
     .eq("id", groupId)
     .maybeSingle();
 
@@ -123,6 +124,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     number: group.number,
     description: group.description,
     city: group.cities?.name ?? null,
+    zone: group.zone?.name ?? null,
     is_active: group.active,
     active_participants_count: countResult.count ?? 0,
     coordinator_name: coordinator?.users.name ?? null,
