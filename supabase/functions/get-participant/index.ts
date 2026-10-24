@@ -13,6 +13,7 @@ type ParticipantRow = {
   birth_date: string;
   job: string | null;
   is_active: boolean;
+  photo: {url: string} | null;
   cities: { name: string } | null;
   zones: { name: string } | null;
 };
@@ -28,7 +29,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("users")
     .select(
-      "id, name, phone, instagram, email, birth_date, job, is_active, cities(name), zones(name)",
+      "id, name, phone, instagram, email, birth_date, job, is_active, photos(url), cities(name), zones(name)",
     )
     .eq("id", participantId)
     .maybeSingle();
@@ -42,11 +43,12 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "participant not found" }, { status: 404 });
   }
 
-  const { cities, zones, ...participant } = data as unknown as ParticipantRow;
+  const { cities, zones, photos, ...participant } = data as unknown as ParticipantRow;
 
   return Response.json({
     ...participant,
     city: cities?.name ?? null,
     zone: zones?.name ?? null,
+    photo: photos?.url ?? null,
   });
 }));
