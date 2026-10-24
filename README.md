@@ -2,18 +2,19 @@
 
 Banco de dados e regras de acesso da plataforma do Clube de Leitura D'Elas.
 
-Consumido pelo app [`mobile`](https://github.com/Clube-de-Leitura-D-elas/mobile).
+Consumido pelo app [`mobile`](https://github.com/Clube-de-Leitura-D-elas/mobile) e pelo painel [`web`](https://github.com/Clube-de-Leitura-D-elas/web).
 
 ---
 
 ## 🧱 O que vive aqui
 
 O backend do projeto é **Supabase**, usado como backend-as-a-service — não há um servidor de
-aplicação próprio. O que este repositório versiona é tudo aquilo que define o banco:
+aplicação próprio. O que este repositório versiona é tudo aquilo que define o banco e as funções de negócio:
 
 | Caminho | Conteúdo |
 |---|---|
 | `supabase/migrations/` | Migrations SQL, uma por mudança de schema |
+| `supabase/functions/` | Edge Functions em TypeScript (Deno runtime) |
 | `supabase/config.toml` | Configuração do projeto Supabase |
 | `supabase/seed.sql` | Dados de exemplo para desenvolvimento local |
 
@@ -53,7 +54,7 @@ As credenciais também estão no **GitHub Secrets** do repositório.
 
 ---
 
-## 🧪 Como testar uma edge function localmente
+## ⚡ Executando as Edge Functions localmente
 
 Com o Supabase local rodando (`npx supabase start` + `npx supabase db reset`, que também aplica o
 `seed.sql`):
@@ -74,6 +75,11 @@ GOOGLE_PLACES_API_KEY=<sua chave da Google Places API>
 ```bash
 # Sobe as edge functions com as variáveis de ambiente locais
 npx supabase functions serve --env-file supabase/functions/.env.local
+```
+
+> **Dica:** Para desativar a verificação de token durante testes manuais de desenvolvimento, você pode adicionar a flag `--no-verify-jwt`.
+
+---
 
 ## 🔄 Fluxo de mudança de schema
 
