@@ -102,7 +102,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         .from("groups")
         .update(updates)
         .eq("id", groupId)
-        .select("id,description,city_Id,zone_Id")
+        .select("id,description,city_id,zone_id")
         .maybeSingle();
 
     if (error || !data) {
