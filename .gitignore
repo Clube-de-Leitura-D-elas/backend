@@ -8,3 +8,6 @@ node_modules/
 .env.keys
 .env.local
 .env.*.local
+
+#vs
+.vscode

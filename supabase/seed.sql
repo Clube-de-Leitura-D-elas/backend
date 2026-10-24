@@ -46,7 +46,7 @@ DROP TABLE IF EXISTS s_const;
 CREATE TEMP TABLE s_const (k text PRIMARY KEY, v text NOT NULL);
 INSERT INTO s_const (k, v) VALUES
   ('registration_active', 'ACTIVE'),   -- group_users.registration_status
-  ('presence_present',    'PRESENT'),  -- meeting_group_users.presence_status
+  ('presence_present',    'PRESENT'),  -- meeting_users.presence_status
   ('presence_absent',     'ABSENT'),
   ('suggestion_available',   'AVAILABLE'),   -- book_suggestions.book_status (indicação concorrendo)
   ('suggestion_drawn',    'DRAWN');    -- book_suggestions.book_status (já sorteado)
@@ -401,7 +401,7 @@ ON CONFLICT (id) DO NOTHING;
 -- 6. GRUPOS E VÍNCULOS
 -- ---------------------------------------------------------
 
-INSERT INTO public.groups (id, number, description, photo_id, city_id, zone_id, active, whatsapp_link) VALUES
+INSERT INTO public.groups (id, number, description, photo_id, city_id, zone_id, is_active, whatsapp_link) VALUES
   (pg_temp.sid('group', '1'), 1,
    'Porto Alegre',
    pg_temp.sid('photo', 'group-1'), pg_temp.cid('poa'), pg_temp.zid('poa-sul'), true,
@@ -520,11 +520,11 @@ ON CONFLICT (id) DO NOTHING;
 -- ---------------------------------------------------------
 
 -- Presença: só nos encontros realizados
-INSERT INTO public.meeting_group_users
-    (id, group_user_id, meeting_id, presence_status)
+INSERT INTO public.meeting_users
+    (id, user_id, meeting_id, presence_status)
 SELECT
     pg_temp.sid('mgu', m.key || ':' || mem.usr::text),
-    pg_temp.sid('gu', mem.grp::text || ':' || mem.usr::text),
+    pg_temp.sid('user', mem.usr::text),
     pg_temp.sid('meeting', m.key),
     CASE
         WHEN EXISTS (
@@ -548,16 +548,19 @@ SELECT pg_temp.sid('photo', 'meeting-' || mp.meeting || '-' || mp.idx),
 FROM s_meeting_photos mp
 ON CONFLICT (photo_id) DO NOTHING;
 
--- Convidadas (participantes de outro grupo que foram como convidadas)
-INSERT INTO public.meeting_guests (id, meeting_id, user_id) VALUES
-  (pg_temp.sid('guest', 'g1-m4:6'),  pg_temp.sid('meeting', 'g1-m4'), pg_temp.sid('user', '6')),
-  (pg_temp.sid('guest', 'g3-m4:18'), pg_temp.sid('meeting', 'g3-m4'), pg_temp.sid('user', '18')),
-  (pg_temp.sid('guest', 'g1-m5:12'), pg_temp.sid('meeting', 'g1-m5'), pg_temp.sid('user', '12'))
+-- Convidadas (participantes de outro grupo que foram como convidadas). Seguem o
+-- mesmo fluxo das participantes em meeting_users: convite confirmado e, nos
+-- encontros já realizados, presença registrada; no encontro futuro, presença
+-- ainda vazia.
+INSERT INTO public.meeting_users (id, user_id, meeting_id, invitation_status, presence_status) VALUES
+  (pg_temp.sid('guest', 'g1-m4:6'),  pg_temp.sid('user', '6'),  pg_temp.sid('meeting', 'g1-m4'), 'CONFIRMED', 'PRESENT'),
+  (pg_temp.sid('guest', 'g3-m4:18'), pg_temp.sid('user', '18'), pg_temp.sid('meeting', 'g3-m4'), 'CONFIRMED', 'PRESENT'),
+  (pg_temp.sid('guest', 'g1-m5:12'), pg_temp.sid('user', '12'), pg_temp.sid('meeting', 'g1-m5'), 'CONFIRMED', NULL)
 ON CONFLICT (id) DO NOTHING;
 
 -- Avaliações dos livros lidos: ~3/4 das presentes avaliam, ~1/3 com texto.
 -- Nota entre 3.0 e 5.0 (passo 0.5), determinística por encontro+participante.
-INSERT INTO public.book_reviews (id, user_id, book_rating, book_review, evaluated_at, book_id)
+INSERT INTO public.book_reviews (id, user_id, rating, commentary, evaluated_at, book_id)
 SELECT pg_temp.sid('review', m.key || ':' || mem.usr::text),
        pg_temp.sid('user', mem.usr::text),
        (3 + ((x.h / 7) % 5) * 0.5)::real,
@@ -586,7 +589,7 @@ WHERE m.status = 'CONCLUDED'
 ON CONFLICT (id) DO NOTHING;
 
 -- Avaliações avulsas, incluindo um texto longo para testar quebra de linha
-INSERT INTO public.book_reviews (id, user_id, book_rating, book_review, evaluated_at, book_id) VALUES
+INSERT INTO public.book_reviews (id, user_id, rating, commentary, evaluated_at, book_id) VALUES
   (pg_temp.sid('review', 'manual-1'), pg_temp.sid('user', '1'),  4.5,
    'Li antes de indicar para o grupo e já sabia que ia render conversa.',
    now() - interval '30 days', pg_temp.sid('book', '15')),

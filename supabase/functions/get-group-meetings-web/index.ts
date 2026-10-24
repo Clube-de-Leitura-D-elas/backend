@@ -77,7 +77,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const [presenceResult, reviewsResult] = await Promise.all([
     ctx.supabaseAdmin
-      .from("meeting_group_users")
+      .from("meeting_users")
       .select("meeting_id, presence_status")
       .in("meeting_id", meetingIds),
 
