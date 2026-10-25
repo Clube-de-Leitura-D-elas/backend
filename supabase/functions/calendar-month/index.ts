@@ -172,7 +172,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   let groupsQuery = ctx.supabaseAdmin
     .from("groups")
     .select("id, number, description, cities(name, uf)")
-    .eq("active", true);
+    .eq("is_active", true);
 
   if (groupId) {
     groupsQuery = groupsQuery.eq("id", groupId);
