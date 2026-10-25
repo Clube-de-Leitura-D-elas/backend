@@ -13,7 +13,7 @@ type ParticipantRow = {
   birth_date: string;
   job: string | null;
   is_active: boolean;
-  photo: {url: string} | null;
+  photos: {url: string} | null;
   cities: { name: string } | null;
   zones: { name: string } | null;
 };
