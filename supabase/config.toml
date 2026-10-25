@@ -541,3 +541,7 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/get-meeting-tasks/deno.json"
 entrypoint = "./functions/get-meeting-tasks/index.ts"
+[functions.event-details-web]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/event-details-web/index.ts"
