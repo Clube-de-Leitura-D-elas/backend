@@ -401,7 +401,7 @@ ON CONFLICT (id) DO NOTHING;
 -- 6. GRUPOS E VÍNCULOS
 -- ---------------------------------------------------------
 
-INSERT INTO public.groups (id, number, description, photo_id, city_id, zone_id, active, whatsapp_link) VALUES
+INSERT INTO public.groups (id, number, description, photo_id, city_id, zone_id, is_active, whatsapp_link) VALUES
   (pg_temp.sid('group', '1'), 1,
    'Porto Alegre',
    pg_temp.sid('photo', 'group-1'), pg_temp.cid('poa'), pg_temp.zid('poa-sul'), true,
