@@ -1,18 +1,17 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
+import {
+  isGroupCoordinatorOrMeetingHost,
+  requireGroupMemberProfile,
+} from "../_shared/group.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
-type MembershipRow = { id: string; is_coordinator: boolean };
+type ParticipantRow = { id: string; user_id: string };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "POST") {
     return Response.json({ error: "expected POST request" }, { status: 405 });
-  }
-
-  const authUserId = ctx.userClaims?.id;
-  if (!authUserId) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   let body: { meeting_id?: unknown; present_group_user_ids?: unknown } | null;
@@ -37,23 +36,6 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
   const present = new Set<string>(presentIds as string[]);
 
-  const { data: profile, error: profileError } = await ctx.supabaseAdmin
-    .from("users")
-    .select("id")
-    .eq("user_id", authUserId)
-    .maybeSingle();
-
-  if (profileError) {
-    console.error(
-      "set-meeting-presence profile error",
-      profileError.message.replace(/[\r\n]/g, " "),
-    );
-    return Response.json({ error: "Unable to set presence" }, { status: 500 });
-  }
-  if (!profile) {
-    return Response.json({ error: "User profile not found" }, { status: 404 });
-  }
-
   const { data: meeting, error: meetingError } = await ctx.supabaseAdmin
     .from("meetings")
     .select("id, group_id, host_id")
@@ -71,37 +53,27 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "Meeting not available" }, { status: 404 });
   }
 
-  const { data: membershipData, error: membershipError } = await ctx
-    .supabaseAdmin
-    .from("group_users")
-    .select("id, is_coordinator")
-    .eq("group_id", meeting.group_id)
-    .eq("user_id", profile.id)
-    .maybeSingle();
+  // Coordenadora do grupo ou anfitriã do encontro (mesma regra do
+  // can_register_presence da get-meeting-details).
+  const member = await requireGroupMemberProfile(ctx, meeting.group_id);
+  if (member instanceof Response) return member;
 
-  if (membershipError) {
-    console.error(
-      "set-meeting-presence membership error",
-      membershipError.message.replace(/[\r\n]/g, " "),
-    );
-    return Response.json({ error: "Unable to set presence" }, { status: 500 });
-  }
-  const membership = membershipData as unknown as MembershipRow | null;
-  if (!membership) {
-    return Response.json({ error: "Meeting not available" }, { status: 404 });
-  }
-
-  // Coordenadora do grupo ou anfitriã do encontro (host_id aponta para group_users).
-  const canRegister = membership.is_coordinator ||
-    membership.id === meeting.host_id;
-  if (!canRegister) {
+  const allowed = await isGroupCoordinatorOrMeetingHost(
+    ctx,
+    meeting.group_id,
+    member.profileId,
+    meeting.host_id,
+    "set-meeting-presence",
+  );
+  if (allowed instanceof Response) return allowed;
+  if (!allowed) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { data: participants, error: participantsError } = await ctx
+  const { data: participantData, error: participantsError } = await ctx
     .supabaseAdmin
     .from("group_users")
-    .select("id")
+    .select("id, user_id")
     .eq("group_id", meeting.group_id);
 
   if (participantsError) {
@@ -112,7 +84,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "Unable to set presence" }, { status: 500 });
   }
 
-  const participantIds = new Set((participants ?? []).map((p) => p.id));
+  const participants = (participantData ?? []) as unknown as ParticipantRow[];
+  const participantIds = new Set(participants.map((p) => p.id));
   if (![...present].every((id) => participantIds.has(id))) {
     return Response.json(
       { error: '"present_group_user_ids" has non-participants' },
@@ -120,12 +93,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     );
   }
 
-  // Registro fechado: já existe presença gravada para este encontro.
+  // Registro fechado: alguma participante do grupo já tem presença gravada.
+  // (Convidadas de outros grupos também vivem em meeting_users e não contam.)
   const { count: registeredCount, error: registeredError } = await ctx
     .supabaseAdmin
-    .from("meeting_group_users")
-    .select("group_user_id", { count: "exact", head: true })
+    .from("meeting_users")
+    .select("user_id", { count: "exact", head: true })
     .eq("meeting_id", meeting.id)
+    .in("user_id", participants.map((p) => p.user_id))
     .not("presence_status", "is", null);
 
   if (registeredError) {
@@ -143,15 +118,17 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   // Um único upsert: marcadas = PRESENT, não marcadas = ABSENT.
   // invitation_status não entra no payload, então a confirmação prévia fica intocada.
-  const rows = [...participantIds].map((groupUserId) => ({
+  const rows = participants.map((p) => ({
     meeting_id: meeting.id,
-    group_user_id: groupUserId,
-    presence_status: present.has(groupUserId) ? "PRESENT" : "ABSENT",
+    user_id: p.user_id,
+    presence_status: (present.has(p.id) ? "PRESENT" : "ABSENT") as
+      | "PRESENT"
+      | "ABSENT",
   }));
 
   const { error: upsertError } = await ctx.supabaseAdmin
-    .from("meeting_group_users")
-    .upsert(rows, { onConflict: "meeting_id,group_user_id" });
+    .from("meeting_users")
+    .upsert(rows, { onConflict: "meeting_id,user_id" });
 
   if (upsertError) {
     console.error(

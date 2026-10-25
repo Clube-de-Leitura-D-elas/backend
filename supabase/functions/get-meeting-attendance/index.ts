@@ -4,7 +4,20 @@ import type { Database } from "../_shared/database.ts";
 import { requireGroupMember } from "../_shared/group.ts";
 import { findMeetingGroupId, readMeetingIdParam } from "../_shared/meeting.ts";
 
+type AttendanceRow = {
+  user_id: string;
+  invitation_status: string | null;
+  presence_status: string | null;
+};
+
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
+  // The mobile client invokes Edge Functions with POST by default. This
+  // endpoint is read-only, so both methods are safe and keep the app contract
+  // compatible with the existing Supabase service.
+  if (req.method !== "GET" && req.method !== "POST") {
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
+  }
+
   const meetingId = readMeetingIdParam(new URL(req.url));
   if (meetingId instanceof Response) return meetingId;
 
@@ -18,31 +31,26 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const denied = await requireGroupMember(ctx, groupId);
   if (denied) return denied;
 
-  const { data: groupUsers, error: usersError } = await ctx.supabaseAdmin
+  const { data: participants, error: participantsError } = await ctx
+    .supabaseAdmin
     .from("group_users")
-    .select(`
-      user_id,
-      users!inner(name, photos(url))
-    `)
+    .select("id, user_id, users!inner(name, photos(url))")
     .eq("group_id", groupId);
 
-  if (usersError) {
+  if (participantsError) {
     console.error(
-      "get-meeting-attendance users error",
-      usersError.message.replace(/[\r\n]/g, " "),
+      "get-meeting-attendance participants error",
+      participantsError.message.replace(/[\r\n]/g, " "),
     );
     return Response.json({ error: "Unable to load meeting attendance" }, {
       status: 500,
     });
   }
 
-  const { data: attendance, error: attendanceError } = await ctx.supabaseAdmin
+  const { data: attendance, error: attendanceError } = await ctx
+    .supabaseAdmin
     .from("meeting_users")
-    .select(`
-      user_id,
-      invitation_status,
-      presence_status
-    `)
+    .select("user_id, invitation_status, presence_status")
     .eq("meeting_id", meetingId);
 
   if (attendanceError) {
@@ -50,45 +58,35 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       "get-meeting-attendance attendance error",
       attendanceError.message.replace(/[\r\n]/g, " "),
     );
-
-    return Response.json(
-      { error: "Unable to load meeting attendance" },
-      { status: 500 },
-    );
+    return Response.json({ error: "Unable to load meeting attendance" }, {
+      status: 500,
+    });
   }
 
-  type MeetingAttendanceRow = {
-    user_id: string;
-    invitation_status: "PENDING" | "CONFIRMED" | "DECLINED";
-    presence_status: "PRESENT" | "ABSENT" | null;
-  };
-
-  const attendanceRows =
-    (attendance ?? []) as unknown as MeetingAttendanceRow[];
-
-  const invitationMap = new Map(
-    attendanceRows.map((row) => [
+  const attendanceByUser = new Map(
+    ((attendance ?? []) as unknown as AttendanceRow[]).map((row) => [
       row.user_id,
-      row.invitation_status,
+      row,
     ]),
   );
 
-  const presenceMap = new Map(
-    attendanceRows.map((row) => [
-      row.user_id,
-      row.presence_status,
-    ]),
-  );
+  const attendees = (participants ?? [])
+    .map((row) => {
+      const participant = row as unknown as {
+        id: string;
+        user_id: string;
+        users: { name: string; photos: { url: string } | null };
+      };
+      const record = attendanceByUser.get(participant.user_id);
+      return {
+        id: participant.id,
+        name: participant.users.name,
+        photo_url: participant.users.photos?.url ?? null,
+        invitation_status: record?.invitation_status ?? "PENDING",
+        presence_status: record?.presence_status ?? null,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
-  const attendanceList = (groupUsers ?? []).map((row: any) => {
-    return {
-      id: row.user_id,
-      name: row.users?.name ?? "",
-      photo_url: row.users?.photos?.url ?? null,
-      invitation_status: invitationMap.get(row.user_id) ?? "PENDING",
-      presence_status: presenceMap.get(row.user_id) ?? null,
-    };
-  });
-
-  return Response.json(attendanceList);
+  return Response.json({ attendees });
 }));

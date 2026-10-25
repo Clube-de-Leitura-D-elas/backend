@@ -52,15 +52,18 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (member instanceof Response) return member;
 
   let canEdit = false;
+  let canRegisterPresence = false;
+  const allowed = await isGroupCoordinatorOrMeetingHost(
+    ctx,
+    meeting.group_id,
+    member.profileId,
+    meeting.host_id,
+    "get-meeting-details",
+  );
+  if (allowed instanceof Response) return allowed;
+  canRegisterPresence = allowed;
+
   if (EDITABLE_STATUSES.includes(meeting.status)) {
-    const allowed = await isGroupCoordinatorOrMeetingHost(
-      ctx,
-      meeting.group_id,
-      member.profileId,
-      meeting.host_id,
-      "get-meeting-details",
-    );
-    if (allowed instanceof Response) return allowed;
     canEdit = allowed;
   }
 
@@ -103,5 +106,6 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     location_address: meeting.locations?.address ?? null,
     location_google_place_id: meeting.locations?.google_place_id ?? null,
     can_edit: canEdit,
+    can_register_presence: canRegisterPresence,
   });
 }));
