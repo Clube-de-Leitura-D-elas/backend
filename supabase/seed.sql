@@ -401,7 +401,7 @@ ON CONFLICT (id) DO NOTHING;
 -- 6. GRUPOS E VÍNCULOS
 -- ---------------------------------------------------------
 
-INSERT INTO public.groups (id, number, description, photo_id, city_id, zone_id, active, whatsapp_link) VALUES
+INSERT INTO public.groups (id, number, description, photo_id, city_id, zone_id, is_active, whatsapp_link) VALUES
   (pg_temp.sid('group', '1'), 1,
    'Porto Alegre',
    pg_temp.sid('photo', 'group-1'), pg_temp.cid('poa'), pg_temp.zid('poa-sul'), true,
@@ -560,7 +560,7 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Avaliações dos livros lidos: ~3/4 das presentes avaliam, ~1/3 com texto.
 -- Nota entre 3.0 e 5.0 (passo 0.5), determinística por encontro+participante.
-INSERT INTO public.book_reviews (id, user_id, book_rating, book_review, evaluated_at, book_id)
+INSERT INTO public.book_reviews (id, user_id, rating, commentary, evaluated_at, book_id)
 SELECT pg_temp.sid('review', m.key || ':' || mem.usr::text),
        pg_temp.sid('user', mem.usr::text),
        (3 + ((x.h / 7) % 5) * 0.5)::real,
@@ -589,7 +589,7 @@ WHERE m.status = 'CONCLUDED'
 ON CONFLICT (id) DO NOTHING;
 
 -- Avaliações avulsas, incluindo um texto longo para testar quebra de linha
-INSERT INTO public.book_reviews (id, user_id, book_rating, book_review, evaluated_at, book_id) VALUES
+INSERT INTO public.book_reviews (id, user_id, rating, commentary, evaluated_at, book_id) VALUES
   (pg_temp.sid('review', 'manual-1'), pg_temp.sid('user', '1'),  4.5,
    'Li antes de indicar para o grupo e já sabia que ia render conversa.',
    now() - interval '30 days', pg_temp.sid('book', '15')),

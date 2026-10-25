@@ -1,0 +1,1 @@
+ALTER TABLE public.groups RENAME COLUMN active TO is_active;

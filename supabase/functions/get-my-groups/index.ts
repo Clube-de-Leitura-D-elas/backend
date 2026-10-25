@@ -48,7 +48,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
       "group_id, groups!inner(id, number, cities(name, uf), photos(url))",
     )
     .eq("user_id", profile.id)
-    .eq("groups.active", true)
+    .eq("groups.is_active", true)
     .order("group_id");
 
   if (error) {

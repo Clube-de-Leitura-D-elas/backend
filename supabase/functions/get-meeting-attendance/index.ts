@@ -37,14 +37,11 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const { data: attendance, error: attendanceError } = await ctx.supabaseAdmin
-    .from("meeting_group_users")
+    .from("meeting_users")
     .select(`
-      group_user_id,
+      user_id,
       invitation_status,
-      presence_status,
-      group_users!inner(
-        user_id
-      )
+      presence_status
     `)
     .eq("meeting_id", meetingId);
 
@@ -61,9 +58,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   type MeetingAttendanceRow = {
-    group_users: {
-      user_id: string;
-    };
+    user_id: string;
     invitation_status: "PENDING" | "CONFIRMED" | "DECLINED";
     presence_status: "PRESENT" | "ABSENT" | null;
   };
@@ -73,14 +68,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const invitationMap = new Map(
     attendanceRows.map((row) => [
-      row.group_users.user_id,
+      row.user_id,
       row.invitation_status,
     ]),
   );
 
   const presenceMap = new Map(
     attendanceRows.map((row) => [
-      row.group_users.user_id,
+      row.user_id,
       row.presence_status,
     ]),
   );

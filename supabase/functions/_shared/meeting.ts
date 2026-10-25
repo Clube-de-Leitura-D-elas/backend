@@ -3,13 +3,16 @@ import type { Database } from "./database.ts";
 import { isUuid } from "./uuid.ts";
 
 /**
- * Lê `meeting_id` da query string.
+ * Lê o id do encontro da query string. Por padrão, `meeting_id`.
  * Retorna o id, ou uma Response de erro para devolver direto.
  */
-export function readMeetingIdParam(url: URL): string | Response {
-  const id = url.searchParams.get("meeting_id");
+export function readMeetingIdParam(
+  url: URL,
+  key = "meeting_id",
+): string | Response {
+  const id = url.searchParams.get(key);
   if (!isUuid(id)) {
-    return Response.json({ error: 'missing/invalid "meeting_id"' }, {
+    return Response.json({ error: `missing/invalid "${key}"` }, {
       status: 400,
     });
   }

@@ -504,6 +504,11 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/get-meeting-photos/deno.json"
 
+[functions.update-meeting]
+enabled = true
+verify_jwt = true
+import_map = "./functions/update-meeting/deno.json"
+
 [functions.get-groups-web]
 enabled = true
 verify_jwt = true
@@ -514,3 +519,19 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/calendar-month/index.ts"
 
+[functions.search-places]
+enabled = true
+verify_jwt = true
+import_map = "./functions/search-places/deno.json"
+entrypoint = "./functions/search-places/index.ts"
+
+[functions.update-group-status-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/update-group-status-web/deno.json"
+entrypoint = "./functions/update-group-status-web/index.ts"
+
+[functions.event-details-web]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/event-details-web/index.ts"
