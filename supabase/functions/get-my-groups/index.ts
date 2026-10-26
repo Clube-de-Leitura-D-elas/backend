@@ -90,18 +90,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     return Response.json({ error: groupUsersError.message }, { status: 500 });
   }
 
-  // Fetch every candidate at once, then retain the first ordered meeting for
-  // each group. This applies the same eligibility definition as
-  // get-group-next-event without issuing a request for each group.
   const { data: meetingData, error: meetingsError } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
       "id, group_id, host_id, status, date, location_id, locations(name, address), books!inner(name), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_users(user_id, invitation_status), meeting_photos(is_sketch)",
     )
     .in("group_id", groupIds)
-    .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
+    .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS", "CONCLUDED"])
     .not("date", "is", null)
-    .or(`date.gte.${new Date().toISOString()},status.eq.IN_PROGRESS`)
     .order("date", { ascending: true });
 
   if (meetingsError) {
@@ -113,8 +109,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
   }
 
   const nextMeetingByGroupId = new Map<string, MeetingRow>();
+  const now = Date.now();
   for (const meeting of (meetingData ?? []) as unknown as MeetingRow[]) {
-    if (!nextMeetingByGroupId.has(meeting.group_id)) {
+    if (nextMeetingByGroupId.has(meeting.group_id)) continue;
+
+    const membership = membershipByGroupId.get(meeting.group_id);
+    const hasPendingTasks = canManageTasks(membership, meeting) &&
+      countDoneTasks(meeting, meeting.meeting_photos) < TASKS_TOTAL;
+    if (isUpcoming(meeting, now) || hasPendingTasks) {
       nextMeetingByGroupId.set(meeting.group_id, meeting);
     }
   }
@@ -149,9 +151,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
             date: meeting.date,
             location: meeting.locations?.name ?? "",
             invitation_status: myAttendance?.invitation_status ?? "PENDING",
-            can_manage_tasks: Boolean(
-              membership?.is_coordinator || meeting.host_id === membership?.id,
-            ),
+            can_manage_tasks: canManageTasks(membership, meeting),
             tasks_done: countDoneTasks(meeting, meeting.meeting_photos),
             tasks_total: TASKS_TOTAL,
           }
@@ -165,3 +165,17 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     }),
   });
 }));
+
+function canManageTasks(
+  membership: MembershipRow | undefined,
+  meeting: MeetingRow,
+): boolean {
+  return Boolean(
+    membership?.is_coordinator || meeting.host_id === membership?.id,
+  );
+}
+
+function isUpcoming(meeting: MeetingRow, now: number): boolean {
+  if (meeting.status === "IN_PROGRESS") return true;
+  return meeting.status !== "CONCLUDED" && Date.parse(meeting.date) >= now;
+}
