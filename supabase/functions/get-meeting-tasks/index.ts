@@ -6,14 +6,21 @@ import {
   requireGroupMemberProfile,
 } from "../_shared/group.ts";
 import { readMeetingIdParam } from "../_shared/meeting.ts";
-
-const ACTIVE_MEETING_STATUSES = ["CREATED", "SCHEDULED", "IN_PROGRESS"];
+import {
+  canConclude,
+  isScheduleDone,
+  recordStatus,
+} from "../_shared/meetingTasks.ts";
 
 type MeetingRow = {
   id: string;
   group_id: string;
   host_id: string;
   status: string;
+  date: string | null;
+  location_id: string | null;
+  locations: { name: string } | null;
+  meeting_photos: { is_sketch: boolean }[];
 };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
@@ -22,7 +29,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
-    .select("id, group_id, host_id, status")
+    .select(
+      "id, group_id, host_id, status, date, location_id, locations(name), meeting_photos(is_sketch)",
+    )
     .eq("id", meetingId)
     .maybeSingle();
 
@@ -43,27 +52,32 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const member = await requireGroupMemberProfile(ctx, meeting.group_id);
   if (member instanceof Response) return member;
 
-  if (!ACTIVE_MEETING_STATUSES.includes(meeting.status)) {
-    return Response.json({
-      meeting_id: meeting.id,
-      status: meeting.status,
-      can_manage_tasks: false,
-    });
-  }
-
-  const allowed = await isGroupCoordinatorOrMeetingHost(
+  // Encontros encerrados continuam acessíveis: a tarefa 2 (registro) só
+  // libera depois do encerramento.
+  const canManageTasks = await isGroupCoordinatorOrMeetingHost(
     ctx,
     meeting.group_id,
     member.profileId,
     meeting.host_id,
     "get-meeting-tasks",
   );
-  if (allowed instanceof Response) return allowed;
+  if (canManageTasks instanceof Response) return canManageTasks;
 
   return Response.json({
     meeting_id: meeting.id,
     status: meeting.status,
-    can_manage_tasks: allowed,
+    can_manage_tasks: canManageTasks,
+    can_conclude: canManageTasks && canConclude(meeting),
+    tasks: {
+      schedule: {
+        done: isScheduleDone(meeting),
+        date: meeting.date,
+        location: meeting.locations?.name ?? null,
+      },
+      record: {
+        status: recordStatus(meeting.status, meeting.meeting_photos),
+      },
+    },
   });
 }));
 

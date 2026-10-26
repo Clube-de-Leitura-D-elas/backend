@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
+import { countDoneTasks, TASKS_TOTAL } from "../_shared/meetingTasks.ts";
 
 type MembershipRow = {
   id: string;
@@ -17,11 +18,14 @@ type MeetingRow = {
   id: string;
   group_id: string;
   host_id: string;
+  status: string;
   date: string;
+  location_id: string | null;
   locations: { name: string; address: string } | null;
   books: { name: string };
   host: { users: { name: string } };
   meeting_users: { user_id: string; invitation_status: string }[];
+  meeting_photos: { is_sketch: boolean }[];
 };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
@@ -92,7 +96,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
   const { data: meetingData, error: meetingsError } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
-      "id, group_id, host_id, date, locations(name, address), books!inner(name), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_users(user_id, invitation_status)",
+      "id, group_id, host_id, status, date, location_id, locations(name, address), books!inner(name), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_users(user_id, invitation_status), meeting_photos(is_sketch)",
     )
     .in("group_id", groupIds)
     .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
@@ -148,6 +152,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
             can_manage_tasks: Boolean(
               membership?.is_coordinator || meeting.host_id === membership?.id,
             ),
+            tasks_done: countDoneTasks(meeting, meeting.meeting_photos),
+            tasks_total: TASKS_TOTAL,
           }
           : null,
         has_pending_response: meeting
