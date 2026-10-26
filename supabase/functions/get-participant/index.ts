@@ -31,9 +31,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     const { data, error } = await ctx.supabaseAdmin
       .from("users")
       .select(
-        "id, name, phone, instagram, email, birth_date, job, is_active, created_at,app_role, cities(name), zones(name)",
-        "id, name, phone, instagram, email, birth_date, job, is_active, created_at, cities(name), zones(name)",
-      )
+        "id, name, phone, instagram, email, birth_date, job, is_active, created_at,app_role, cities(name), zones(name)"      )
       .eq("id", participantId)
       .maybeSingle();
 
