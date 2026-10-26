@@ -545,3 +545,15 @@ entrypoint = "./functions/get-meeting-tasks/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/event-details-web/index.ts"
+
+[functions.get-my-notifications]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-my-notifications/deno.json"
+entrypoint = "./functions/get-my-notifications/index.ts"
+
+[functions.mark-notification-read]
+enabled = true
+verify_jwt = true
+import_map = "./functions/mark-notification-read/deno.json"
+entrypoint = "./functions/mark-notification-read/index.ts"
