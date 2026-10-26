@@ -33,6 +33,7 @@ Deno.serve(
       .from("users")
       .select(
         "id, name, phone, instagram, email, birth_date, job, is_active, created_at,app_role, cities(name), zones(name)",
+        "id, name, phone, instagram, email, birth_date, job, is_active, created_at, cities(name), zones(name)",
       )
       .eq("id", participantId)
       .maybeSingle();
