@@ -21,8 +21,7 @@ type ParticipantRow = {
 };
 
 // Dados do perfil de uma participante. Query string: participant_id.
-Deno.serve(
-  withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
+Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     const denied = await requireFounder(ctx);
     if (denied) return denied;
 
