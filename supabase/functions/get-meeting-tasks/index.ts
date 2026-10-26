@@ -19,6 +19,8 @@ type MeetingRow = {
   status: string;
   date: string | null;
   location_id: string | null;
+  books: { name: string; author: string };
+  groups: { number: number };
   locations: { name: string } | null;
   meeting_photos: { is_sketch: boolean }[];
 };
@@ -30,7 +32,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
-      "id, group_id, host_id, status, date, location_id, locations(name), meeting_photos(is_sketch)",
+      "id, group_id, host_id, status, date, location_id, books!inner(name, author), groups!inner(number), locations(name), meeting_photos(is_sketch)",
     )
     .eq("id", meetingId)
     .maybeSingle();
@@ -68,6 +70,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     status: meeting.status,
     can_manage_tasks: canManageTasks,
     can_conclude: canManageTasks && canConclude(meeting),
+    book_title: meeting.books.name,
+    book_author: meeting.books.author,
+    group_name: `Grupo ${meeting.groups.number}`,
     tasks: {
       schedule: {
         done: isScheduleDone(meeting),
