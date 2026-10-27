@@ -39,9 +39,9 @@ Deno.serve(
 
     const { data, error } = await ctx.supabaseAdmin
       .from("groups")
-      .update({ active: isActive })
+      .update({ is_active: isActive })
       .eq("id", groupId)
-      .select("active")
+      .select("is_active")
       .maybeSingle();
 
     if (error) {
@@ -52,6 +52,6 @@ Deno.serve(
     if (!data) {
       return Response.json({ error: "group not found" }, { status: 404 });
     }
-    return Response.json({ is_active: data.active });
+    return Response.json({ is_active: data.is_active });
   }),
 );
