@@ -71,6 +71,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     });
   }
 
+  // Mesma regra do can_add_photos da get-meeting-photos: o registro só
+  // libera depois do encerramento.
+  if (meeting.status !== "CONCLUDED") {
+    return Response.json({
+      error: "photos can only be added after the meeting is concluded",
+    }, { status: 409 });
+  }
+
   const existing = await findExistingPhoto(ctx, req, request);
   if (existing) return existing;
 
