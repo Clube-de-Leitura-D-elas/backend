@@ -5,8 +5,6 @@ import { requireFounder } from "../_shared/founder.ts";
 import { oneLine } from "../_shared/log.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
-// Aceita "43" ou "Grupo 43": o campo "Número do grupo" do modal.
-const GROUP_NUMBER = /^(?:grupo\s*)?(\d{1,9})$/i;
 const UNIQUE_VIOLATION = "23505";
 
 type CityRow = { id: string; name: string };
@@ -22,8 +20,10 @@ type GroupRow = {
 
 type Location = { cityId: string; zoneId: string | null; description: string };
 
-// Cria um grupo pelo painel web. Body JSON (o formato do modal):
-// { name, cityId, coordinatorId? }. `cityId` pode ser uma cidade ou uma zona.
+// Cria um grupo pelo painel web. Body JSON: { cityId, coordinatorId? }.
+// O número é calculado a partir do maior groups.number já cadastrado.
+// Reaproveita a RPC existente, sem qualquer migration.
+// `cityId` pode ser uma cidade ou uma zona.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "POST") {
     return Response.json({ error: "expected POST request" }, { status: 405 });
@@ -32,19 +32,11 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const denied = await requireFounder(ctx);
   if (denied) return denied;
 
-  let body: { name?: unknown; cityId?: unknown; coordinatorId?: unknown } | null;
+  let body: { cityId?: unknown; coordinatorId?: unknown } | null;
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: "expected JSON body" }, { status: 400 });
-  }
-
-  const match = typeof body?.name === "string"
-    ? GROUP_NUMBER.exec(body.name.trim())
-    : null;
-  const number = match ? Number(match[1]) : 0;
-  if (number < 1) {
-    return Response.json({ error: 'missing/invalid "name"' }, { status: 400 });
   }
 
   const cityId = body?.cityId;
@@ -72,38 +64,58 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     if (coordinatorError) return coordinatorError;
   }
 
-  const { data, error } = await ctx.supabaseAdmin.rpc("create_group", {
-    p_number: number,
-    p_description: location.description,
-    p_city_id: location.cityId,
-    p_zone_id: location.zoneId,
-    p_coordinator_id: coordinatorId,
-  });
+  // O número real só é calculado no momento de salvar (a prévia pode mudar).
+  // A RPC existente já exige p_number e preserva a criação transacional.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: lastGroup, error: numberError } = await ctx.supabaseAdmin
+      .from("groups")
+      .select("number")
+      .order("number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  if (error) {
-    if (error.code === UNIQUE_VIOLATION) {
-      return Response.json(
-        { error: "group number already exists" },
-        { status: 409 },
-      );
+    if (numberError) {
+      console.error("create-group number error", oneLine(numberError.message));
+      return Response.json({ error: "unable to find next group number" }, { status: 500 });
     }
-    console.error("create-group error", oneLine(error.message));
-    return Response.json({ error: error.message }, { status: 500 });
+
+    const number = (lastGroup?.number ?? 0) + 1;
+    const { data, error } = await ctx.supabaseAdmin.rpc("create_group", {
+      p_number: number,
+      p_description: location.description,
+      p_city_id: location.cityId,
+      p_zone_id: location.zoneId,
+      p_coordinator_id: coordinatorId,
+    });
+
+    if (error) {
+      // A constraint UNIQUE (number) já existe. Se outra requisição tiver
+      // criado este número antes, lê o maior novamente e tenta outro.
+      if (error.code === UNIQUE_VIOLATION) continue;
+
+      console.error("create-group error", oneLine(error.message));
+      return Response.json({ error: error.message }, { status: 500 });
+    }
+
+    const group = data as GroupRow;
+
+    return Response.json(
+      {
+        id: group.id,
+        number: group.number,
+        description: group.description,
+        cityId: group.city_id,
+        zoneId: group.zone_id,
+        coordinatorId,
+        createdAt: group.created_at,
+      },
+      { status: 201 },
+    );
   }
 
-  const group = data as GroupRow;
-
   return Response.json(
-    {
-      id: group.id,
-      number: group.number,
-      description: group.description,
-      cityId: group.city_id,
-      zoneId: group.zone_id,
-      coordinatorId,
-      createdAt: group.created_at,
-    },
-    { status: 201 },
+    { error: "group number conflict; please retry" },
+    { status: 409 },
   );
 }));
 
