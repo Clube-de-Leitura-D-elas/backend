@@ -17,6 +17,7 @@ const MAX_PHOTOS_PER_MEETING = 50;
 const MAX_BASE64_LENGTH = Math.ceil(MAX_PHOTO_BYTES / 3) * 4;
 const MAX_BODY_BYTES = MAX_BASE64_LENGTH + 4096;
 const PHOTO_LIMIT_ERRCODE = "P0050";
+const PHOTO_STATUSES = ["ENDED", "CONCLUDED"];
 
 const HEIC_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "mif1", "msf1"]);
 
@@ -73,9 +74,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   // Mesma regra do can_add_photos da get-meeting-photos: o registro só
   // libera depois do encerramento.
-  if (meeting.status !== "CONCLUDED") {
+  if (!PHOTO_STATUSES.includes(meeting.status)) {
     return Response.json({
-      error: "photos can only be added after the meeting is concluded",
+      error: "photos can only be added after the meeting is ended",
     }, { status: 409 });
   }
 
@@ -88,8 +89,26 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const bytes = decodePhoto(request);
   if (bytes instanceof Response) return bytes;
 
-  return await storePhoto(ctx, req, request, bytes, member.profileId);
+  const response = await storePhoto(
+    ctx,
+    req,
+    request,
+    bytes,
+    member.profileId,
+  );
+  // Enviar a foto oficial conclui o registro: ENDED -> CONCLUDED.
+  if (response.status === 201) await concludeMeeting(ctx, request.meetingId);
+  return response;
 }));
+
+async function concludeMeeting(ctx: Ctx, meetingId: string) {
+  const { error } = await ctx.supabaseAdmin
+    .from("meetings")
+    .update({ status: "CONCLUDED" })
+    .eq("id", meetingId)
+    .eq("status", "ENDED");
+  if (error) logError("conclude error", error.message);
+}
 
 async function readPhotoRequest(
   req: Request,

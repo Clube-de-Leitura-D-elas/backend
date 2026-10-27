@@ -96,7 +96,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
       "id, group_id, host_id, status, date, location_id, locations(name, address), books!inner(name), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_users(user_id, invitation_status), meeting_photos(is_sketch)",
     )
     .in("group_id", groupIds)
-    .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
+    .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS", "ENDED"])
     .not("date", "is", null)
     .order("date", { ascending: true });
 
@@ -144,6 +144,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
         next_meeting: meeting
           ? {
             id: meeting.id,
+            status: meeting.status,
             host_name: meeting.host.users.name,
             book_title: meeting.books.name,
             date: meeting.date,
@@ -175,5 +176,5 @@ function canManageTasks(
 
 function isUpcoming(meeting: MeetingRow, now: number): boolean {
   if (meeting.status === "IN_PROGRESS") return true;
-  return meeting.status !== "CONCLUDED" && Date.parse(meeting.date) >= now;
+  return meeting.status !== "ENDED" && Date.parse(meeting.date) >= now;
 }

@@ -30,7 +30,8 @@ export function recordStatus(
   status: string,
   photos: { is_sketch: boolean }[],
 ): RecordStatus {
-  if (status !== "CONCLUDED") return "LOCKED";
+  if (status === "CONCLUDED") return "PUBLISHED";
+  if (status !== "ENDED") return "LOCKED";
   if (photos.some((photo) => !photo.is_sketch)) return "PUBLISHED";
   return photos.length > 0 ? "DRAFT" : "PENDING";
 }

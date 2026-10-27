@@ -20,7 +20,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       "id, date, books!inner(name, photos(url)), host:group_users!meetings_host_id_fkey!inner(users!inner(name))",
     )
     .eq("group_id", groupId)
-    .eq("status", "CONCLUDED")
+    .in("status", ["ENDED", "CONCLUDED"])
     .lte("date", new Date().toISOString())
     .order("date", { ascending: false });
 

@@ -55,7 +55,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       { count: "exact" },
     )
     .eq("group_id", groupId)
-    .eq("status", "CONCLUDED")
+    .in("status", ["ENDED", "CONCLUDED"])
     .not("date", "is", null)
     .order("date", { ascending: false })
     .order("id")
