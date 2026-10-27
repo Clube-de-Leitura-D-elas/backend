@@ -14,6 +14,7 @@ type ParticipantRow = {
   birth_date: string;
   job: string | null;
   is_active: boolean;
+  photos: { url: string } | null;
   created_at: string;
   cities: { name: string } | null;
   zones: { name: string } | null;
@@ -28,13 +29,13 @@ Deno.serve(
     const participantId = readParticipantIdParam(new URL(req.url));
     if (participantId instanceof Response) return participantId;
 
-    const { data, error } = await ctx.supabaseAdmin
-      .from("users")
-      .select(
-        "id, name, phone, instagram, email, birth_date, job, is_active, created_at, cities(name), zones(name)",
-      )
-      .eq("id", participantId)
-      .maybeSingle();
+  const { data, error } = await ctx.supabaseAdmin
+    .from("users")
+    .select(
+      "id, name, phone, instagram, email, birth_date, job, is_active, created_at, photos(url), cities(name), zones(name)",
+    )
+    .eq("id", participantId)
+    .maybeSingle();
 
     if (error) {
       console.error("get-participant error", error);
@@ -45,14 +46,13 @@ Deno.serve(
       return Response.json({ error: "participant not found" }, { status: 404 });
     }
 
-    const { cities, zones, created_at, ...participant } =
-      data as unknown as ParticipantRow;
+  const { cities, zones, photos, created_at, ...participant } = data as unknown as ParticipantRow;
 
-    return Response.json({
-      ...participant,
-      entry_date: toLocalDate(created_at),
-      city: cities?.name ?? null,
-      zone: zones?.name ?? null,
-    });
-  }),
-);
+  return Response.json({
+    ...participant,
+    entry_date: toLocalDate(created_at),
+    city: cities?.name ?? null,
+    zone: zones?.name ?? null,
+    photo: photos?.url ?? null,
+  });
+}));
