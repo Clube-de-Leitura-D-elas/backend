@@ -14,7 +14,7 @@ type UpdateParticipanteBody = {
     zone_id: string | null;
     birth_date: string;
     job: string | null;
-    app_role: "MANAGER" | "READER";
+    app_role: "MANAGER" | "READER" | "FOUNDER";
 }
 
 const isNullableString = (
@@ -114,9 +114,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
     const appRole = payload.app_role;
 
-    if (appRole !== "MANAGER" && appRole !== "READER") {
+    if (appRole !== "MANAGER" && appRole !== "READER" && appRole !== "FOUNDER") {
         return Response.json(
-            { error: 'invalid "app_role": expected MANAGER or READER' },
+            { error: 'invalid "app_role": expected MANAGER, READER or FOUNDER' },
             { status: 400 },
         );
     }
