@@ -49,10 +49,10 @@ export async function findMeetingGroupIdAndHostId(
   ctx: SupabaseContext<Database>,
   meetingId: string,
   logLabel: string,
-): Promise<{ groupId: string; hostId: string } | Response> {
+): Promise<{ groupId: string; hostId: string; status: string } | Response> {
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
-    .select("group_id, host_id")
+    .select("group_id, host_id, status")
     .eq("id", meetingId)
     .maybeSingle();
 
@@ -71,5 +71,6 @@ export async function findMeetingGroupIdAndHostId(
   return {
     groupId: data.group_id as string,
     hostId: data.host_id as string,
+    status: data.status as string,
   };
 }
