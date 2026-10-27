@@ -4,7 +4,7 @@ import type { Database } from "../_shared/database.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
 type MembershipRow = { id: string; is_coordinator: boolean };
-type ParticipantRow = { id: string; user_id: string };
+type ParticipantRow = { user_id: string };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "POST") {
@@ -121,8 +121,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { count: registeredCount, error: registeredError } = await ctx
     .supabaseAdmin
-    .from("meeting_group_users")
-    .select("group_user_id", { count: "exact", head: true })
+    .from("meeting_users")
+    .select("user_id", { count: "exact", head: true })
     .eq("meeting_id", meeting.id)
     .not("presence_status", "is", null);
 
@@ -141,13 +141,13 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const rows = participants.map((p) => ({
     meeting_id: meeting.id,
-    group_user_id: p.id,
+    user_id: p.user_id,
     presence_status: present.has(p.user_id) ? "PRESENT" : "ABSENT",
   }));
 
   const { error: upsertError } = await ctx.supabaseAdmin
-    .from("meeting_group_users")
-    .upsert(rows, { onConflict: "meeting_id,group_user_id" });
+    .from("meeting_users")
+    .upsert(rows, { onConflict: "meeting_id,user_id" });
 
   if (upsertError) {
     console.error(
