@@ -2,10 +2,12 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { type SupabaseContext, withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import {
-  isGroupCoordinatorOrMeetingHost,
-  requireGroupMemberProfile,
-} from "../_shared/group.ts";
-import { findMeetingGroupIdAndHostId } from "../_shared/meeting.ts";
+  canEditMaterial,
+  forbiddenForMembers,
+  loadMeetingMaterial,
+  type MeetingMaterial,
+  meetingNotStarted,
+} from "../_shared/meetingRecord.ts";
 import {
   MEETING_PHOTOS_BUCKET,
   signMeetingPhotos,
@@ -14,6 +16,7 @@ import { isUuid } from "../_shared/uuid.ts";
 
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const MAX_PHOTOS_PER_MEETING = 50;
+const MAX_CAPTION_LENGTH = 300;
 const MAX_BASE64_LENGTH = Math.ceil(MAX_PHOTO_BYTES / 3) * 4;
 const MAX_BODY_BYTES = MAX_BASE64_LENGTH + 4096;
 const PHOTO_LIMIT_ERRCODE = "P0050";
@@ -35,49 +38,22 @@ type PhotoRequest = {
   contentType: string;
   extension: string;
   encoded: string;
+  caption: string;
 };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const request = await readPhotoRequest(req);
   if (request instanceof Response) return request;
 
-  const meeting = await findMeetingGroupIdAndHostId(
+  const material = await loadMeetingMaterial(
     ctx,
     request.meetingId,
     "add-meeting-photo",
-  );
-  if (meeting instanceof Response) return meeting;
-
-  const member = await requireGroupMemberProfile(
-    ctx,
-    meeting.groupId,
     { activeOnly: true },
   );
-  if (member instanceof Response) return member;
-
-  const result = await isGroupCoordinatorOrMeetingHost(
-    ctx,
-    meeting.groupId,
-    member.profileId,
-    meeting.hostId,
-    "add-meeting-photo",
-  );
-  if (result instanceof Response) return result;
-  if (!result) {
-    return Response.json({
-      error: "Forbidden: group coordinators or meeting host only.",
-    }, {
-      status: 403,
-    });
-  }
-
-  // Mesma regra do can_add_photos da get-meeting-photos: o registro só
-  // libera depois do encerramento.
-  if (meeting.status !== "CONCLUDED") {
-    return Response.json({
-      error: "photos can only be added after the meeting is concluded",
-    }, { status: 409 });
-  }
+  if (material instanceof Response) return material;
+  if (!material.canManage) return forbiddenForMembers();
+  if (!canEditMaterial(material)) return meetingNotStarted();
 
   const existing = await findExistingPhoto(ctx, req, request);
   if (existing) return existing;
@@ -88,8 +64,33 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const bytes = decodePhoto(request);
   if (bytes instanceof Response) return bytes;
 
-  return await storePhoto(ctx, req, request, bytes, member.profileId);
+  const recordError = await ensureRecord(ctx, material);
+  if (recordError) return recordError;
+
+  return await storePhoto(ctx, req, request, bytes, material.profileId);
 }));
+
+async function ensureRecord(
+  ctx: Ctx,
+  material: MeetingMaterial,
+): Promise<Response | null> {
+  if (material.hasRecord) return null;
+
+  const now = new Date().toISOString();
+  const { error } = await ctx.supabaseAdmin
+    .from("meeting_records")
+    .upsert({
+      meeting_id: material.meetingId,
+      published_at: material.isConcluded ? now : null,
+      updated_at: now,
+    }, { onConflict: "meeting_id", ignoreDuplicates: true });
+
+  if (error) {
+    logError("record error", error.message);
+    return serverError();
+  }
+  return null;
+}
 
 async function readPhotoRequest(
   req: Request,
@@ -137,12 +138,22 @@ async function readPhotoRequest(
     return photoTooLarge();
   }
 
+  const rawCaption = body?.caption ?? "";
+  if (typeof rawCaption !== "string") {
+    return badRequest('invalid "caption"');
+  }
+  const caption = rawCaption.trim();
+  if (caption.length > MAX_CAPTION_LENGTH) {
+    return badRequest('invalid "caption"');
+  }
+
   return {
     meetingId,
     photoId: photoId.toLowerCase(),
     contentType: contentType as string,
     extension,
     encoded,
+    caption,
   };
 }
 
@@ -277,6 +288,7 @@ async function insertPhotoRows(
       photo_id: request.photoId,
       meeting_id: request.meetingId,
       is_cover: false,
+      caption: request.caption,
     });
   if (!linkError) return null;
 

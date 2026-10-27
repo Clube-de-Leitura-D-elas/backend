@@ -19,6 +19,7 @@ type MeetingRow = {
   status: string;
   date: string | null;
   location_id: string | null;
+  meeting_photos: { count: number }[];
 };
 
 // Chamada pelo app ao concluir a lista de presença aberta por
@@ -44,7 +45,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
-    .select("id, group_id, host_id, status, date, location_id")
+    .select("id, group_id, host_id, status, date, location_id, meeting_photos(count)")
     .eq("id", meetingId)
     .maybeSingle();
 
@@ -78,10 +79,13 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     }, { status: 403 });
   }
 
-  if (!canConclude(meeting)) {
-    return Response.json({ error: "meeting cannot be concluded yet" }, {
-      status: 409,
-    });
+  const photoCount = meeting.meeting_photos[0]?.count ?? 0;
+  if (!canConclude(meeting, photoCount)) {
+    return Response.json({
+      error: photoCount === 0
+        ? "add at least one photo before concluding"
+        : "meeting cannot be concluded yet",
+    }, { status: 409 });
   }
 
   const { data: updated, error: updateError } = await ctx.supabaseAdmin
@@ -101,6 +105,19 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "meeting cannot be concluded yet" }, {
       status: 409,
     });
+  }
+
+  const { error: publishError } = await ctx.supabaseAdmin
+  .from("meeting_records")
+  .upsert({
+    meeting_id: meeting.id,
+    published_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "meeting_id" });
+
+  if (publishError) {
+    console.error(`${LOG_LABEL} publish error`, oneLine(publishError.message));
+    return Response.json({ error: publishError.message }, { status: 500 });
   }
 
   return Response.json({ id: updated.id, status: updated.status });

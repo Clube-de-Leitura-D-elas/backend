@@ -548,6 +548,23 @@ SELECT pg_temp.sid('photo', 'meeting-' || mp.meeting || '-' || mp.idx),
 FROM s_meeting_photos mp
 ON CONFLICT (photo_id) DO NOTHING;
 
+-- Registro (fotos e resumo): encontro encerrado = publicado, na data do encontro.
+INSERT INTO public.meeting_records (meeting_id, summary, published_at)
+SELECT pg_temp.sid('meeting', m.key),
+       COALESCE(r.summary, ''),
+       mt.date
+FROM s_meetings m
+JOIN public.meetings mt ON mt.id = pg_temp.sid('meeting', m.key)
+LEFT JOIN (VALUES
+  ('g1-m3', 'Conversa animada sobre as personagens e indicações para a próxima leitura.'),
+  ('g1-m4', 'Encontro com convidada de outro grupo e muita discussão sobre o final.'),
+  ('g3-m4', 'Debate longo sobre o livro; todas querem ler outro da mesma autora.')
+) AS r(key, summary) ON r.key = m.key
+WHERE m.status = 'CONCLUDED'
+ON CONFLICT (meeting_id) DO UPDATE
+  SET summary = EXCLUDED.summary,
+      published_at = EXCLUDED.published_at;
+
 -- Convidadas (participantes de outro grupo que foram como convidadas). Seguem o
 -- mesmo fluxo das participantes em meeting_users: convite confirmado e, nos
 -- encontros já realizados, presença registrada; no encontro futuro, presença
