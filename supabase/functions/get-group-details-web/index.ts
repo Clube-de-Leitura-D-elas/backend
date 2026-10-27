@@ -84,6 +84,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       .select("users!inner(name, email)")
       .eq("group_id", groupId)
       .eq("is_coordinator", true)
+      .eq("registration_status", ACTIVE_REGISTRATION)
       .order("id")
       .limit(1)
       .maybeSingle(),
