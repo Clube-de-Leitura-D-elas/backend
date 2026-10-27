@@ -96,7 +96,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
       "id, group_id, host_id, status, date, location_id, locations(name, address), books!inner(name), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_users(user_id, invitation_status), meeting_photos(is_sketch)",
     )
     .in("group_id", groupIds)
-    .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS", "CONCLUDED"])
+    .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
     .not("date", "is", null)
     .order("date", { ascending: true });
 
@@ -114,9 +114,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     if (nextMeetingByGroupId.has(meeting.group_id)) continue;
 
     const membership = membershipByGroupId.get(meeting.group_id);
-    const hasPendingTasks = canManageTasks(membership, meeting) &&
-      countDoneTasks(meeting, meeting.meeting_photos) < TASKS_TOTAL;
-    if (isUpcoming(meeting, now) || hasPendingTasks) {
+    if (isUpcoming(meeting, now) || canManageTasks(membership, meeting)) {
       nextMeetingByGroupId.set(meeting.group_id, meeting);
     }
   }
