@@ -1,19 +1,27 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
+import {
+  isGroupCoordinatorOrMeetingHost,
+  requireGroupMemberProfile,
+} from "../_shared/group.ts";
+import { oneLine } from "../_shared/log.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
-type MembershipRow = { id: string; is_coordinator: boolean };
+const LOG_LABEL = "set-meeting-presence";
+
+type MeetingRow = {
+  id: string;
+  group_id: string;
+  host_id: string;
+  status: string;
+};
+
 type ParticipantRow = { user_id: string };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "POST") {
     return Response.json({ error: "expected POST request" }, { status: 405 });
-  }
-
-  const authUserId = ctx.userClaims?.id;
-  if (!authUserId) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   let body: { meeting_id?: unknown; present_user_ids?: unknown } | null;
@@ -35,78 +43,52 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       status: 400,
     });
   }
-  const present = new Set<string>(presentIds as string[]);
+  const present = new Set<string>(presentIds);
 
-  const { data: profile, error: profileError } = await ctx.supabaseAdmin
-    .from("users")
-    .select("id")
-    .eq("user_id", authUserId)
-    .maybeSingle();
-
-  if (profileError) {
-    console.error(
-      "set-meeting-presence profile error",
-      profileError.message.replace(/[\r\n]/g, " "),
-    );
-    return Response.json({ error: "Unable to set presence" }, { status: 500 });
-  }
-  if (!profile) {
-    return Response.json({ error: "User profile not found" }, { status: 404 });
-  }
-
-  const { data: meeting, error: meetingError } = await ctx.supabaseAdmin
+  const { data: meetingData, error: meetingError } = await ctx.supabaseAdmin
     .from("meetings")
-    .select("id, group_id, host_id")
+    .select("id, group_id, host_id, status")
     .eq("id", meetingId)
     .maybeSingle();
 
   if (meetingError) {
-    console.error(
-      "set-meeting-presence meeting error",
-      meetingError.message.replace(/[\r\n]/g, " "),
-    );
+    console.error(`${LOG_LABEL} meeting error`, oneLine(meetingError.message));
     return Response.json({ error: "Unable to set presence" }, { status: 500 });
   }
-  if (!meeting) {
+  if (!meetingData) {
     return Response.json({ error: "Meeting not available" }, { status: 404 });
   }
 
-  const { data: membershipData, error: membershipError } = await ctx
-    .supabaseAdmin
-    .from("group_users")
-    .select("id, is_coordinator")
-    .eq("group_id", meeting.group_id)
-    .eq("user_id", profile.id)
-    .maybeSingle();
+  const meeting = meetingData as unknown as MeetingRow;
 
-  if (membershipError) {
-    console.error(
-      "set-meeting-presence membership error",
-      membershipError.message.replace(/[\r\n]/g, " "),
-    );
-    return Response.json({ error: "Unable to set presence" }, { status: 500 });
-  }
-  const membership = membershipData as unknown as MembershipRow | null;
-  if (!membership) {
-    return Response.json({ error: "Meeting not available" }, { status: 404 });
-  }
+  const member = await requireGroupMemberProfile(ctx, meeting.group_id, {
+    activeOnly: true,
+  });
+  if (member instanceof Response) return member;
 
-  const canRegister = membership.is_coordinator ||
-    membership.id === meeting.host_id;
-  if (!canRegister) {
+  const allowed = await isGroupCoordinatorOrMeetingHost(
+    ctx,
+    meeting.group_id,
+    member.profileId,
+    meeting.host_id,
+    LOG_LABEL,
+  );
+  if (allowed instanceof Response) return allowed;
+  if (!allowed) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { data: participantData, error: participantsError } = await ctx
     .supabaseAdmin
     .from("group_users")
-    .select("id, user_id")
-    .eq("group_id", meeting.group_id);
+    .select("user_id")
+    .eq("group_id", meeting.group_id)
+    .eq("registration_status", "ACTIVE");
 
   if (participantsError) {
     console.error(
-      "set-meeting-presence participants error",
-      participantsError.message.replace(/[\r\n]/g, " "),
+      `${LOG_LABEL} participants error`,
+      oneLine(participantsError.message),
     );
     return Response.json({ error: "Unable to set presence" }, { status: 500 });
   }
@@ -128,8 +110,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   if (registeredError) {
     console.error(
-      "set-meeting-presence registered error",
-      registeredError.message.replace(/[\r\n]/g, " "),
+      `${LOG_LABEL} registered error`,
+      oneLine(registeredError.message),
     );
     return Response.json({ error: "Unable to set presence" }, { status: 500 });
   }
@@ -145,16 +127,34 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     presence_status: present.has(p.user_id) ? "PRESENT" : "ABSENT",
   }));
 
-  const { error: upsertError } = await ctx.supabaseAdmin
-    .from("meeting_users")
-    .upsert(rows, { onConflict: "meeting_id,user_id" });
+  if (rows.length > 0) {
+    const { error: upsertError } = await ctx.supabaseAdmin
+      .from("meeting_users")
+      .upsert(rows, { onConflict: "meeting_id,user_id" });
 
-  if (upsertError) {
-    console.error(
-      "set-meeting-presence upsert error",
-      upsertError.message.replace(/[\r\n]/g, " "),
-    );
-    return Response.json({ error: "Unable to set presence" }, { status: 500 });
+    if (upsertError) {
+      console.error(`${LOG_LABEL} upsert error`, oneLine(upsertError.message));
+      return Response.json({ error: "Unable to set presence" }, {
+        status: 500,
+      });
+    }
+  }
+
+  if (meeting.status !== "CONCLUDED") {
+    const { error: concludeError } = await ctx.supabaseAdmin
+      .from("meetings")
+      .update({ status: "CONCLUDED" })
+      .eq("id", meeting.id);
+
+    if (concludeError) {
+      console.error(
+        `${LOG_LABEL} conclude error`,
+        oneLine(concludeError.message),
+      );
+      return Response.json({ error: "Unable to conclude meeting" }, {
+        status: 500,
+      });
+    }
   }
 
   return Response.json({ meeting_id: meeting.id });
