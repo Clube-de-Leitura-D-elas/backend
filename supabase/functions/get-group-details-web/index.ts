@@ -21,12 +21,12 @@ type GroupRow = {
   id: string;
   number: number;
   description: string;
-  active: boolean;
+  is_active: boolean;
   cities: { name: string } | null;
 };
 
 type CoordinatorRow = {
-  users: { name: string; email: string };
+  users: { name: string; email: string; photos: {url:string}|null};
 };
 
 type NextMeetingRow = {
@@ -52,7 +52,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { data: groupData, error: groupError } = await ctx.supabaseAdmin
     .from("groups")
-    .select("id, number, description, active, cities(name)")
+    .select("id, number, description, is_active, cities(name)")
     .eq("id", groupId)
     .maybeSingle();
 
@@ -81,9 +81,10 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
     ctx.supabaseAdmin
       .from("group_users")
-      .select("users!inner(name, email)")
+      .select("users!inner(name, email, photos(url))")
       .eq("group_id", groupId)
       .eq("is_coordinator", true)
+      .eq("registration_status", ACTIVE_REGISTRATION)
       .order("id")
       .limit(1)
       .maybeSingle(),
@@ -123,10 +124,11 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     number: group.number,
     description: group.description,
     city: group.cities?.name ?? null,
-    is_active: group.active,
+    is_active: group.is_active,
     active_participants_count: countResult.count ?? 0,
     coordinator_name: coordinator?.users.name ?? null,
     coordinator_email: coordinator?.users.email ?? null,
+    coordinator_photo: coordinator?.users.photos?.url ?? null,
     next_meeting: meeting
       ? {
         date: meeting.date,

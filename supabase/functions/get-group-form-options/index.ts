@@ -12,7 +12,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const denied = await requireFounder(ctx);
   if (denied) return denied;
 
-  const [citiesResult, zonesResult, coordinatorsResult] = await Promise.all([
+  const [citiesResult, zonesResult, coordinatorsResult, lastGroupResult] = await Promise.all([
     ctx.supabaseAdmin.from("cities").select("id, name").order("name"),
     ctx.supabaseAdmin.from("zones").select("id, name, city_id").order("name"),
     ctx.supabaseAdmin
@@ -20,15 +20,22 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       .select("id, name")
       .eq("is_active", true)
       .order("name"),
+    ctx.supabaseAdmin
+      .from("groups")
+      .select("number")
+      .order("number", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
-  const error = citiesResult.error ?? zonesResult.error ?? coordinatorsResult.error;
+  const error = citiesResult.error ?? zonesResult.error ?? coordinatorsResult.error ?? lastGroupResult.error;
   if (error) {
     console.error("get-group-form-options error", oneLine(error.message));
     return Response.json({ error: "unable to load group form options" }, { status: 500 });
   }
 
   return Response.json({
+    nextGroupNumber: (lastGroupResult.data?.number ?? 0) + 1,
     cities: citiesResult.data ?? [],
     zones: (zonesResult.data ?? []).map((zone) => ({
       id: zone.id,

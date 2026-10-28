@@ -14,7 +14,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     ctx.supabaseAdmin
       .from("groups")
       .select("id, number, description, city_id")
-      .eq("active", true)
+      .eq("is_active", true)
       .order("number"),
   ]);
 
