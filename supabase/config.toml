@@ -542,7 +542,15 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/conclude-meeting/deno.json"
 entrypoint = "./functions/conclude-meeting/index.ts"
+
 [functions.event-details-web]
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/event-details-web/index.ts"
+
+[functions.set-meeting-presence]
+enabled = true
+verify_jwt = true
+import_map = "./functions/set-meeting-presence/deno.json"
+entrypoint = "./functions/set-meeting-presence/index.ts"
+
