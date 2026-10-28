@@ -6,15 +6,12 @@ import { readNeighborhood } from "../_shared/location.ts";
 import { oneLine } from "../_shared/log.ts";
 import { requireRole } from "../_shared/role.ts";
 
-// `group_users.registration_status` é varchar livre; "ACTIVE" é o único valor
-// que o schema e o seed documentam para vínculo ativo.
 const ACTIVE_REGISTRATION = "ACTIVE";
 
-// Encontro que ainda vai acontecer. Um IN_PROGRESS continua sendo o próximo
-// mesmo com a data já passada (começou há pouco); rascunho sem data fica fora.
+
 const OPEN_STATUSES = ["CREATED", "SCHEDULED", "IN_PROGRESS"];
 
-// "Confirmado" na tela = já tem data e local fechados. CREATED é a pendência.
+
 const CONFIRMED_STATUSES = new Set(["SCHEDULED", "IN_PROGRESS"]);
 
 type GroupRow = {
@@ -37,9 +34,7 @@ type NextMeetingRow = {
   locations: { name: string; address: string } | null;
 };
 
-// Cabeçalho da tela de detalhes do grupo no painel web: identificação do grupo,
-// coordenadora responsável e próximo encontro agendado.
-// Query string: groupId.
+
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "GET") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
@@ -53,7 +48,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { data: groupData, error: groupError } = await ctx.supabaseAdmin
     .from("groups")
-    .select("id, number, description, active, cities(name),zones(name)")
+    .select("id, number, description, is_active, cities(name),zones(name)")
     .eq("id", groupId)
     .maybeSingle();
 
@@ -72,7 +67,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const group = groupData as unknown as GroupRow;
 
   const [countResult, coordinatorResult, meetingResult] = await Promise.all([
-    // "N participantes ativas" do subtítulo: vínculo ativo e conta ativa.
+
     ctx.supabaseAdmin
       .from("group_users")
       .select("id, users!inner(is_active)", { count: "exact", head: true })
@@ -124,7 +119,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     number: group.number,
     description: group.description,
     city: group.cities?.name ?? null,
-    zone: group.zone?.name ?? null,
+    zone: group.zones?.name ?? null,
     is_active: group.active,
     active_participants_count: countResult.count ?? 0,
     coordinator_name: coordinator?.users.name ?? null,

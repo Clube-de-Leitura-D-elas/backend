@@ -105,25 +105,26 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         .select("id,description,city_id,zone_id")
         .maybeSingle();
 
-    if (error || !data) {
-        if (error) {
-            console.error("update-group_location error", error);
-        }
 
-        if (!error && !data) {
-            console.error(
-                "update-group_location: no group returned after update",
-            );
-        }
+    if (error) {
+        console.error("update-group-location error", error);
 
-        if (!data && !error) {
-            return Response.json(
-                { error: "group not found" },
-                { status: 404 },
-            );
-        }
-
-
+        return Response.json(
+            { error: "Internal server error" },
+            { status: 500 },
+        );
     }
+
+    if (!data) {
+        console.error(
+            "update-group-location: no group returned after update",
+        );
+
+        return Response.json(
+            { error: "group not found" },
+            { status: 404 },
+        );
+    }
+
     return Response.json(data);
 }));
