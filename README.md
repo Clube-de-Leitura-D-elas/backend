@@ -2,18 +2,19 @@
 
 Banco de dados e regras de acesso da plataforma do Clube de Leitura D'Elas.
 
-Consumido pelo app [`mobile`](https://github.com/Clube-de-Leitura-D-elas/mobile).
+Consumido pelo app [`mobile`](https://github.com/Clube-de-Leitura-D-elas/mobile) e pelo painel [`web`](https://github.com/Clube-de-Leitura-D-elas/web).
 
 ---
 
 ## 🧱 O que vive aqui
 
 O backend do projeto é **Supabase**, usado como backend-as-a-service — não há um servidor de
-aplicação próprio. O que este repositório versiona é tudo aquilo que define o banco:
+aplicação próprio. O que este repositório versiona é tudo aquilo que define o banco e as funções de negócio:
 
 | Caminho | Conteúdo |
 |---|---|
 | `supabase/migrations/` | Migrations SQL, uma por mudança de schema |
+| `supabase/functions/` | Edge Functions em TypeScript (Deno runtime) |
 | `supabase/config.toml` | Configuração do projeto Supabase |
 | `supabase/seed.sql` | Dados de exemplo para desenvolvimento local |
 
@@ -53,64 +54,30 @@ As credenciais também estão no **GitHub Secrets** do repositório.
 
 ---
 
-## 🧪 Como testar uma edge function localmente
+## ⚡ Executando as Edge Functions localmente
 
 Com o Supabase local rodando (`npx supabase start` + `npx supabase db reset`, que também aplica o
 `seed.sql`):
 
-```bash
-# 1. Sobe as edge functions (hot reload ao salvar o arquivo)
-npx supabase functions serve
+### Variáveis de ambiente das Edge Functions
 
-# 2. Em outro terminal, faz login com uma usuária do seed para pegar um JWT
-#    (senha de todas as usuárias do seed: ClubeDelas@123)
-TOKEN=$(curl -s -X POST "http://127.0.0.1:54321/auth/v1/token?grant_type=password" \
-  -H "apikey: <Publishable key do supabase start>" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"local.user.reader@gmail.com","password":"ClubeDelas@123"}' | jq -r .access_token)
+Algumas funções dependem de chaves externas para funcionar localmente. Crie o arquivo
+`supabase/functions/.env.local` (já está no `.gitignore`) e adicione as variáveis necessárias:
 
-# 3. Pega um id para testar direto no banco
-psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c "select id, number from groups order by number"
-
-# 4. Chama a função
-curl -s "http://127.0.0.1:54321/functions/v1/get-group-next-event?group_id=<id>" \
-  -H "Authorization: Bearer $TOKEN" | jq
+```env
+GOOGLE_PLACES_API_KEY=<sua chave da Google Places API>
 ```
 
-As funções declaradas com `verify_jwt = true` no `config.toml` recusam chamadas sem o header
-`Authorization` (401). Os logs (`console.error`) aparecem no terminal do `functions serve`.
+> A `GOOGLE_PLACES_API_KEY` é usada pelas funções `search-places` e `update-meeting` para
+> buscar e resolver endereços via Google Places API. Sem ela, essas funções retornam erro 500
+> (`place search is not configured`). As demais funções continuam funcionando normalmente.
 
-Vale testar, além do caminho feliz: id inexistente (404), id inválido (400), sem token (401) e os
-cenários que o seed já cobre (ver comentários na seção de encontros do `seed.sql`).
+```bash
+# Sobe as edge functions com as variáveis de ambiente locais
+npx supabase functions serve --env-file supabase/functions/.env.local
+```
 
-### Funções do painel web (sufixo `-web`)
-
-O app mobile e o painel web pedem recortes diferentes dos mesmos dados. Quando as duas telas
-precisam do mesmo assunto, a função do painel leva o sufixo `-web` — `get-group-details` serve o
-app, `get-group-details-web` serve o painel — para que mudar o contrato de uma não quebre a outra.
-
-As funções do painel também leem a query string em camelCase (`groupId`, `pageSize`, `cityId`),
-que é o formato que o front envia, e devolvem listas paginadas como `{ items, total }`.
-
-### Criação de grupo
-
-`create-group` exige JWT de uma usuária `FOUNDER` e aceita somente `POST` com o formato do modal
-do painel: `{ "name": "43", "cityId": "<uuid>", "coordinatorId": "<uuid>" | null }`.
-
-- `name` é o número do grupo (`"43"` ou `"Grupo 43"`) e precisa ser único em todo o clube (409).
-- `cityId` pode ser o id de uma cidade ou de uma zona; com zona, a cidade vem da zona. A descrição
-  do grupo é o nome do lugar escolhido.
-- `coordinatorId` é opcional e precisa ser uma participante ativa (`users.id`).
-
-Grupo e coordenadora são criados numa transação só (`public.create_group`). Responde `201` com
-`{ id, number, description, cityId, zoneId, coordinatorId, createdAt }`.
-
-### Resposta de presença
-
-`set-meeting-attendance-response` exige JWT e aceita somente `POST` com
-`{ "meeting_id": "<uuid>", "presence_status": "PRESENT" | "ABSENT" }`. A função confirma que
-a usuária autenticada pertence ao grupo e que o encontro possui data e ainda está elegível
-(`CREATED`, `SCHEDULED` futuro ou `IN_PROGRESS`) antes de registrar ou atualizar sua resposta.
+> **Dica:** Para desativar a verificação de token durante testes manuais de desenvolvimento, você pode adicionar a flag `--no-verify-jwt`.
 
 ---
 
@@ -139,6 +106,11 @@ editar uma já aplicada.
 ## 🔐 Segredos
 
 Nenhuma chave do Supabase é commitada. As credenciais ficam no **GitHub Secrets** do repositório e devem ser adicionadas manualmente no `.env` do app mobile.
+
+| Variável | Onde configurar (remoto) | Onde configurar (local) |
+|---|---|---|
+| Credenciais Supabase | GitHub Secrets | `.env` do app mobile |
+| `GOOGLE_PLACES_API_KEY` | `npx supabase secrets set GOOGLE_PLACES_API_KEY=...` | `supabase/functions/.env.local` |
 
 ---
 

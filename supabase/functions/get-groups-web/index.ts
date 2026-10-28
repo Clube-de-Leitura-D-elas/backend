@@ -19,12 +19,12 @@ type GroupRow = {
   number: number;
   description: string;
   created_at: string;
-  active: boolean;
+  is_active: boolean;
   cities: { id: string; name: string } | null;
 };
 
 type GroupMetaRow = {
-  active: boolean;
+  is_active: boolean;
   city_id: string;
   cities: { id: string; name: string } | null;
 };
@@ -86,7 +86,7 @@ const dbError = (step: string, message: string) => {
 const loadMeta = async (ctx: SupabaseContext<Database>) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("groups")
-    .select("active, city_id, cities(id, name)");
+    .select("is_active, city_id, cities(id, name)");
 
   if (error) return dbError("metadata", error.message);
 
@@ -96,7 +96,7 @@ const loadMeta = async (ctx: SupabaseContext<Database>) => {
 
   for (const group of (data ?? []) as unknown as GroupMetaRow[]) {
     if (group.cities) cityMap.set(group.cities.id, group.cities.name);
-    if (group.active) {
+    if (group.is_active) {
       activeGroups += 1;
       activeCityIds.add(group.city_id);
     }
@@ -158,7 +158,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   };
 
   let groupsQuery = filteredGroups(
-    "id, number, description, created_at, active, cities(id, name)",
+    "id, number, description, created_at, is_active, cities(id, name)",
     { count: "exact" },
   );
 
@@ -266,7 +266,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     coordinator: coordinatorByGroup.get(group.id) ?? null,
     members: memberCountByGroup.get(group.id) ?? 0,
     nextMeetingAt: nextMeetingByGroup.get(group.id) ?? null,
-    status: group.active ? "active" : "closed",
+    status: group.is_active ? "active" : "closed",
   }));
 
   return Response.json({ items, total, summary, cities });

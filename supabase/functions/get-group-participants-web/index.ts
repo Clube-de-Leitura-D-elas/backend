@@ -52,10 +52,11 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error, count } = await ctx.supabaseAdmin
     .from("users")
     .select(
-      "id, name, email, memberships:group_users!inner(is_coordinator, created_at, group_id)",
+      "id, name, email, memberships:group_users!inner(is_coordinator, created_at, group_id, registration_status)",
       { count: "exact" },
     )
     .eq("memberships.group_id", groupId)
+    .eq("memberships.registration_status", "ACTIVE")
     .order("name", { ascending: true })
     .order("id")
     .range(from, to);
