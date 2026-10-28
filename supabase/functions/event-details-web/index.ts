@@ -14,6 +14,12 @@ type EventRow = {
     description: string;
     cities: { name: string };
   };
+  books: {
+    id: string;
+    name: string;
+    author: string;
+    photos: { url: string } | null;
+  } | null;
 };
 
 // Detalhes de um evento (encontro) no painel web. Query string: eventId.
@@ -31,7 +37,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   // Rascunho sem data fica fora: o painel trata como evento não encontrado.
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
-    .select("id, date, groups!inner(id, number, description, cities(name))")
+    .select(
+      "id, date, groups!inner(id, number, description, cities(name)), books(id, name, author, photos(url))",
+    )
     .eq("id", eventId)
     .not("date", "is", null)
     .maybeSingle();
@@ -59,5 +67,13 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       name: `Grupo ${String(event.groups.number).padStart(2, "0")} — ${event.groups.description}`,
       city: event.groups.cities.name,
     },
+    book: event.books
+      ? {
+        id: event.books.id,
+        title: event.books.name,
+        author: event.books.author,
+        coverUrl: event.books.photos?.url ?? null,
+      }
+      : null,
   });
 }));
