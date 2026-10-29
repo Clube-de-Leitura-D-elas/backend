@@ -33,8 +33,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return badRequest('missing/invalid "photo_id"');
   }
 
-  const meeting = await requireMeetingRecordManager(ctx, meetingId, LOG_LABEL);
-  if (meeting instanceof Response) return meeting;
+  const allowed = await requireMeetingRecordManager(ctx, meetingId, LOG_LABEL);
+  if (allowed instanceof Response) return allowed;
 
   const { data, error } = await ctx.supabaseAdmin
     .from("meeting_photos")
@@ -47,6 +47,10 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return serverError();
   }
   if (!data) {
+    // Uma remoção anterior pode ter apagado a foto e falhado ao reabrir o
+    // registro; refazer a reabertura aqui destrava esse caso no retry.
+    const reopened = await reopenRecordWhenEmpty(ctx, meetingId);
+    if (reopened instanceof Response) return reopened;
     return Response.json({ error: "photo not found in this meeting" }, {
       status: 404,
     });
@@ -56,14 +60,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const deleteError = await deletePhotoRows(ctx, row.photo_id);
   if (deleteError) return deleteError;
 
-  if (row.photos?.url) {
-    const { error: removeError } = await ctx.supabaseAdmin.storage
-      .from(MEETING_PHOTOS_BUCKET)
-      .remove([row.photos.url]);
-    if (removeError) logError("storage remove error", removeError.message);
-  }
+  await removeStorageObject(ctx, meetingId, row.photos?.url);
 
-  const status = await reopenRecordWhenEmpty(ctx, meetingId, meeting.status);
+  const status = await reopenRecordWhenEmpty(ctx, meetingId);
   if (status instanceof Response) return status;
 
   return Response.json({ meeting_id: meetingId, photo_id: row.photo_id, status });
@@ -90,15 +89,25 @@ async function deletePhotoRows(
   return null;
 }
 
+async function removeStorageObject(
+  ctx: Ctx,
+  meetingId: string,
+  path: string | undefined,
+) {
+  if (!path?.startsWith(`meetings/${meetingId}/`)) return;
+  const { error } = await ctx.supabaseAdmin.storage
+    .from(MEETING_PHOTOS_BUCKET)
+    .remove([path]);
+  if (error) logError("storage remove error", error.message);
+}
+
 // Sem nenhuma foto oficial, o registro volta a ficar pendente:
 // CONCLUDED -> ENDED, o inverso do que a add-meeting-photo faz.
+// Devolve o status do encontro depois da checagem.
 async function reopenRecordWhenEmpty(
   ctx: Ctx,
   meetingId: string,
-  status: string,
 ): Promise<string | Response> {
-  if (status !== "CONCLUDED") return status;
-
   const { count, error } = await ctx.supabaseAdmin
     .from("meeting_photos")
     .select("photo_id", { count: "exact", head: true })
@@ -108,18 +117,28 @@ async function reopenRecordWhenEmpty(
     logError("count error", error.message);
     return serverError();
   }
-  if ((count ?? 0) > 0) return status;
+  if ((count ?? 0) === 0) {
+    const { error: updateError } = await ctx.supabaseAdmin
+      .from("meetings")
+      .update({ status: "ENDED" })
+      .eq("id", meetingId)
+      .eq("status", "CONCLUDED");
+    if (updateError) {
+      logError("reopen error", updateError.message);
+      return serverError();
+    }
+  }
 
-  const { error: updateError } = await ctx.supabaseAdmin
+  const { data, error: statusError } = await ctx.supabaseAdmin
     .from("meetings")
-    .update({ status: "ENDED" })
+    .select("status")
     .eq("id", meetingId)
-    .eq("status", "CONCLUDED");
-  if (updateError) {
-    logError("reopen error", updateError.message);
+    .single();
+  if (statusError) {
+    logError("status error", statusError.message);
     return serverError();
   }
-  return "ENDED";
+  return data.status as string;
 }
 
 function logError(label: string, message: string) {
