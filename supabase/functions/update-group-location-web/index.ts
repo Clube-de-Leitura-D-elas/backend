@@ -2,129 +2,101 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
+import { oneLine } from "../_shared/log.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
-
-type UpdateGroupLocationBody = {
-    group_id: string;
-    description: string;
-    city_id: string;
-    zone_id: string | null;
-}
-
-const isNullableString = (
-    value: unknown,
-): value is string | null => {
-    return value === null || typeof value === "string";
-};
-
+// Edita a localização de um grupo no painel web (só fundadora).
+// POST { group_id, description, city_id, zone_id | null }
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
-    const denied = await requireFounder(ctx);
-    if (denied) return denied;
+  if (req.method !== "POST") {
+    return Response.json({ error: "expected POST request" }, { status: 405 });
+  }
 
-    if (req.method !== "POST") {
-        return Response.json(
-            { error: "expected POST request" },
-            { status: 405 },
-        );
-    }
+  const denied = await requireFounder(ctx);
+  if (denied) return denied;
 
-    let body: unknown;
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "expected JSON body" }, { status: 400 });
+  }
 
-    try {
-        body = await req.json();
-    } catch {
-        return Response.json(
-            { error: "expected JSON body" },
-            { status: 400 },
-        );
-    }
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    return Response.json({ error: "invalid JSON body" }, { status: 400 });
+  }
 
-    if (
-        body === null ||
-        typeof body !== "object" ||
-        Array.isArray(body)
-    ) {
-        return Response.json(
-            { error: "invalid JSON body" },
-            { status: 400 },
-        );
-    }
+  const { group_id: groupId, description, city_id: cityId, zone_id: zoneId } =
+    body as Record<string, unknown>;
 
-    const payload = body as Record<string, unknown>;
+  if (!isUuid(groupId)) {
+    return Response.json({ error: 'missing/invalid "group_id"' }, {
+      status: 400,
+    });
+  }
 
-    const groupId = payload.group_id;
+  if (typeof description !== "string" || !description.trim()) {
+    return Response.json({ error: 'missing/invalid "description"' }, {
+      status: 400,
+    });
+  }
 
-    if (!isUuid(groupId)) {
-        return Response.json(
-            { error: 'missing/invalid "groupId"' },
-            { status: 400 },
-        );
-    }
+  if (!isUuid(cityId)) {
+    return Response.json({ error: 'missing/invalid "city_id"' }, {
+      status: 400,
+    });
+  }
 
-    //Campos não nulos
-    const description = payload.description;
-    const cityId = payload.city_id;
+  if (zoneId !== null && !isUuid(zoneId)) {
+    return Response.json({ error: 'invalid "zone_id"' }, { status: 400 });
+  }
 
+  // A zona precisa ser da cidade escolhida; sem isso o grupo fica com uma
+  // "Zona Sul" de outra cidade.
+  const { data: city, error: cityError } = await ctx.supabaseAdmin
+    .from("cities")
+    .select("id, zones(id)")
+    .eq("id", cityId)
+    .maybeSingle();
 
-    if (typeof description !== "string" || !description.trim()) {
-        return Response.json(
-            { error: 'missing/invalid "description"' },
-            { status: 400 },
-        );
-    }
+  if (cityError) {
+    console.error(
+      "update-group-location city error",
+      oneLine(cityError.message),
+    );
+    return Response.json({ error: cityError.message }, { status: 500 });
+  }
 
-    if (typeof cityId !== "string" || !cityId.trim() || !isUuid(cityId)) {
-        return Response.json(
-            { error: 'missing/invalid "cityId"' },
-            { status: 400 },
-        );
-    }
+  if (!city) {
+    return Response.json({ error: "city not found" }, { status: 400 });
+  }
 
-    //Campo Nulo
+  const cityZones = (city.zones ?? []) as { id: string }[];
+  if (zoneId !== null && !cityZones.some((zone) => zone.id === zoneId)) {
+    return Response.json({ error: "zone does not belong to city" }, {
+      status: 400,
+    });
+  }
 
-    const zoneId = payload.zone_id;
+  const { data, error } = await ctx.supabaseAdmin
+    .from("groups")
+    .update({
+      description: description.trim(),
+      city_id: cityId,
+      zone_id: zoneId,
+    })
+    .eq("id", groupId)
+    .select("id, description, city_id, zone_id")
+    .maybeSingle();
 
-    if (zoneId !== null && !isUuid(zoneId)) {
-        return Response.json(
-            { error: 'invalid "zone_id"' },
-            { status: 400 },
-        );
-    }
+  if (error) {
+    console.error("update-group-location error", oneLine(error.message));
+    return Response.json({ error: error.message }, { status: 500 });
+  }
 
-    const updates = {
-        description: description.trim(),
-        city_id: cityId,
-        zone_id: zoneId,
-    };
+  if (!data) {
+    return Response.json({ error: "group not found" }, { status: 404 });
+  }
 
-    const { data, error } = await ctx.supabaseAdmin
-        .from("groups")
-        .update(updates)
-        .eq("id", groupId)
-        .select("id,description,city_id,zone_id")
-        .maybeSingle();
-
-
-    if (error) {
-        console.error("update-group-location error", error);
-
-        return Response.json(
-            { error: "Internal server error" },
-            { status: 500 },
-        );
-    }
-
-    if (!data) {
-        console.error(
-            "update-group-location: no group returned after update",
-        );
-
-        return Response.json(
-            { error: "group not found" },
-            { status: 404 },
-        );
-    }
-
-    return Response.json(data);
+  return Response.json(data);
 }));
