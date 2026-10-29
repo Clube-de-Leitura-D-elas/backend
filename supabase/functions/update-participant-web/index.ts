@@ -14,7 +14,7 @@ type UpdateParticipanteBody = {
     zone_id: string | null;
     birth_date: string;
     job: string | null;
-    app_role: "MANAGER" | "READER";
+    app_role: "MANAGER" | "READER" | "FOUNDER";
 }
 
 const isNullableString = (
@@ -114,9 +114,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
     const appRole = payload.app_role;
 
-    if (appRole !== "MANAGER" && appRole !== "READER") {
+    if (appRole !== "MANAGER" && appRole !== "READER" && appRole !== "FOUNDER") {
         return Response.json(
-            { error: 'invalid "app_role": expected MANAGER or READER' },
+            { error: 'invalid "app_role": expected MANAGER, READER or FOUNDER' },
             { status: 400 },
         );
     }
@@ -142,6 +142,38 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     if (!isNullableString(job)) {
         return Response.json(
             { error: 'invalid "job"' },
+            { status: 400 },
+        );
+    }
+
+    // A zona precisa ser da cidade escolhida ("Zona Sul" existe em mais de uma).
+    const { data: city, error: cityError } = await ctx.supabaseAdmin
+        .from("cities")
+        .select("id, zones(id)")
+        .eq("id", cityId)
+        .maybeSingle();
+
+    if (cityError) {
+        console.error("get-city-before-update error", cityError);
+
+        return Response.json(
+            { error: "could not retrieve city" },
+            { status: 500 },
+        );
+    }
+
+    if (!city) {
+        return Response.json(
+            { error: "city not found" },
+            { status: 400 },
+        );
+    }
+
+    const cityZones = (city.zones ?? []) as { id: string }[];
+
+    if (zoneId !== null && !cityZones.some((zone) => zone.id === zoneId)) {
+        return Response.json(
+            { error: "zone does not belong to city" },
             { status: 400 },
         );
     }
