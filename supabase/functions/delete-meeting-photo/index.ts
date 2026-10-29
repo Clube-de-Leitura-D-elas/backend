@@ -54,8 +54,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const row = data as unknown as MeetingPhotoRow;
 
-  // Reabre antes de apagar: se a reabertura falhar, nada foi removido e o
-  // retry começa do zero.
+  // Reabre antes de apagar: se a reabertura falhar, a foto continua lá e o
+  // retry começa do zero. Se o delete falhar depois, o encontro fica ENDED
+  // com a foto até o retry, que refaz o delete.
   const reopenError = await reopenRecordWhenLastPhoto(
     ctx,
     meetingId,
@@ -66,8 +67,6 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const deleteError = await deletePhotoRows(ctx, row.photo_id);
   if (deleteError) return deleteError;
 
-  await removeStorageObject(ctx, meetingId, row.photos?.url);
-
   // Duas remoções simultâneas das últimas fotos veem "sobrou outra" antes
   // do delete; a segunda checagem garante que quem terminar por último reabra.
   const lateReopenError = await reopenRecordWhenLastPhoto(
@@ -77,8 +76,10 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   );
   if (lateReopenError) logError("late reopen failed", meetingId);
 
+  await removeStorageObject(ctx, meetingId, row.photos?.url);
+
+  // A foto já saiu: falhar aqui não pode virar erro de remoção.
   const status = await findMeetingStatus(ctx, meetingId);
-  if (status instanceof Response) return status;
 
   return Response.json({ meeting_id: meetingId, photo_id: row.photo_id, status });
 }));
@@ -150,7 +151,7 @@ async function reopenRecordWhenLastPhoto(
 async function findMeetingStatus(
   ctx: Ctx,
   meetingId: string,
-): Promise<string | Response> {
+): Promise<string | null> {
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
     .select("status")
@@ -158,7 +159,7 @@ async function findMeetingStatus(
     .single();
   if (error) {
     logError("status error", error.message);
-    return serverError();
+    return null;
   }
   return data.status as string;
 }
