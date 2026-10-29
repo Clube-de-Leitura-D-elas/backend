@@ -68,6 +68,15 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   await removeStorageObject(ctx, meetingId, row.photos?.url);
 
+  // Duas remoções simultâneas das últimas fotos veem "sobrou outra" antes
+  // do delete; a segunda checagem garante que quem terminar por último reabra.
+  const lateReopenError = await reopenRecordWhenLastPhoto(
+    ctx,
+    meetingId,
+    row.photo_id,
+  );
+  if (lateReopenError) logError("late reopen failed", meetingId);
+
   const status = await findMeetingStatus(ctx, meetingId);
   if (status instanceof Response) return status;
 
