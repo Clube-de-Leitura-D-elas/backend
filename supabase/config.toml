@@ -563,3 +563,28 @@ import_map = "./functions/delete-meeting-photo/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/update-meeting-promo-text/deno.json"
+
+[functions.get-eligible-raffle-participants]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-eligible-raffle-participants/deno.json"
+
+[functions.confirm-meeting-raffle]
+enabled = true
+verify_jwt = true
+import_map = "./functions/confirm-meeting-raffle/deno.json"
+
+[functions.draw-meeting-raffle]
+enabled = true
+verify_jwt = true
+import_map = "./functions/draw-meeting-raffle/deno.json"
+
+[functions.get-meeting-raffle-result]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-meeting-raffle-result/deno.json"
+
+[functions.confirm-meeting-raffle-winner]
+enabled = true
+verify_jwt = true
+import_map = "./functions/confirm-meeting-raffle-winner/deno.json"
