@@ -6,6 +6,7 @@ import {
   requireGroupMemberProfile,
 } from "../_shared/group.ts";
 import { readMeetingIdParam } from "../_shared/meeting.ts";
+import { RECORD_STATUSES } from "../_shared/meetingRecord.ts";
 import {
   canConclude,
   isScheduleDone,
@@ -23,6 +24,7 @@ type MeetingRow = {
   groups: { number: number };
   locations: { name: string } | null;
   meeting_photos: { is_sketch: boolean }[];
+  meeting_raffles: { meeting_id: string } | null;
 };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
@@ -32,7 +34,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
-      "id, group_id, host_id, status, date, location_id, books!inner(name, author), groups!inner(number), locations(name), meeting_photos(is_sketch)",
+      "id, group_id, host_id, status, date, location_id, books!inner(name, author), groups!inner(number), locations(name), meeting_photos(is_sketch), meeting_raffles(meeting_id)",
     )
     .eq("id", meetingId)
     .maybeSingle();
@@ -70,6 +72,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     status: meeting.status,
     can_manage_tasks: canManageTasks,
     can_conclude: canManageTasks && canConclude(meeting),
+    // Quem saiu do sorteio sem concluir precisa conseguir voltar a ele.
+    can_raffle: canManageTasks && RECORD_STATUSES.includes(meeting.status) &&
+      !meeting.meeting_raffles,
     book_title: meeting.books.name,
     book_author: meeting.books.author,
     group_name: `Grupo ${meeting.groups.number}`,
