@@ -146,6 +146,38 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         );
     }
 
+    // A zona precisa ser da cidade escolhida ("Zona Sul" existe em mais de uma).
+    const { data: city, error: cityError } = await ctx.supabaseAdmin
+        .from("cities")
+        .select("id, zones(id)")
+        .eq("id", cityId)
+        .maybeSingle();
+
+    if (cityError) {
+        console.error("get-city-before-update error", cityError);
+
+        return Response.json(
+            { error: "could not retrieve city" },
+            { status: 500 },
+        );
+    }
+
+    if (!city) {
+        return Response.json(
+            { error: "city not found" },
+            { status: 400 },
+        );
+    }
+
+    const cityZones = (city.zones ?? []) as { id: string }[];
+
+    if (zoneId !== null && !cityZones.some((zone) => zone.id === zoneId)) {
+        return Response.json(
+            { error: "zone does not belong to city" },
+            { status: 400 },
+        );
+    }
+
     const updates = {
         name: name.trim(),
         email: email.trim(),
