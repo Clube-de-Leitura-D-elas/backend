@@ -79,6 +79,13 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  if (!ENDABLE_STATUSES.includes(meeting.status) && meeting.status !== "ENDED") {
+    return Response.json(
+      { error: "Meeting cannot register presence in its current status" },
+      { status: 409 },
+    );
+  }
+
   const { data: participantData, error: participantsError } = await ctx
     .supabaseAdmin
     .from("group_users")

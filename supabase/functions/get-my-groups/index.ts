@@ -155,7 +155,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
             tasks_total: TASKS_TOTAL,
           }
           : null,
-        has_pending_response: meeting
+        has_pending_response: meeting && meeting.status !== "ENDED"
           ? !meeting.meeting_users.some(
             (attendance) => attendance.user_id === profile.id,
           )

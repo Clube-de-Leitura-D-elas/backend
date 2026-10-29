@@ -97,17 +97,27 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     member.profileId,
   );
   // Enviar a foto oficial conclui o registro: ENDED -> CONCLUDED.
-  if (response.status === 201) await concludeMeeting(ctx, request.meetingId);
+  if (response.status === 201) {
+    const concludeError = await concludeMeeting(ctx, request.meetingId);
+    if (concludeError) return concludeError;
+  }
   return response;
 }));
 
-async function concludeMeeting(ctx: Ctx, meetingId: string) {
+async function concludeMeeting(
+  ctx: Ctx,
+  meetingId: string,
+): Promise<Response | null> {
   const { error } = await ctx.supabaseAdmin
     .from("meetings")
     .update({ status: "CONCLUDED" })
     .eq("id", meetingId)
     .eq("status", "ENDED");
-  if (error) logError("conclude error", error.message);
+  if (error) {
+    logError("conclude error", error.message);
+    return serverError();
+  }
+  return null;
 }
 
 async function readPhotoRequest(
@@ -296,6 +306,7 @@ async function insertPhotoRows(
       photo_id: request.photoId,
       meeting_id: request.meetingId,
       is_cover: false,
+      is_sketch: false,
     });
   if (!linkError) return null;
 
