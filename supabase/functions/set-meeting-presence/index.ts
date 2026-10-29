@@ -9,6 +9,7 @@ import { oneLine } from "../_shared/log.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
 const LOG_LABEL = "set-meeting-presence";
+const ENDABLE_STATUSES = ["SCHEDULED", "IN_PROGRESS"];
 
 type MeetingRow = {
   id: string;
@@ -78,6 +79,13 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  if (!ENDABLE_STATUSES.includes(meeting.status) && meeting.status !== "ENDED") {
+    return Response.json(
+      { error: "Meeting cannot register presence in its current status" },
+      { status: 409 },
+    );
+  }
+
   const { data: participantData, error: participantsError } = await ctx
     .supabaseAdmin
     .from("group_users")
@@ -140,11 +148,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     }
   }
 
-  if (meeting.status !== "CONCLUDED") {
+  // Registrar a presença encerra o encontro (-> ENDED). Ele só passa a
+  // CONCLUDED quando a foto oficial é enviada (ver add-meeting-photo).
+  if (ENDABLE_STATUSES.includes(meeting.status)) {
     const { error: concludeError } = await ctx.supabaseAdmin
       .from("meetings")
-      .update({ status: "CONCLUDED" })
-      .eq("id", meeting.id);
+      .update({ status: "ENDED" })
+      .eq("id", meeting.id)
+      .in("status", ENDABLE_STATUSES);
 
     if (concludeError) {
       console.error(

@@ -79,7 +79,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .from("meetings")
     .select("id, date")
     .eq("group_id", groupId)
-    .eq("status", "CONCLUDED")
+    .in("status", ["ENDED", "CONCLUDED"])
     .not("date", "is", null)
     .order("date", { ascending: false })
     .limit(ATTENDANCE_MEETINGS);

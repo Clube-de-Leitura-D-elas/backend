@@ -218,7 +218,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         .in("group_id", groupIds)
         .not("date", "is", null)
         .gte("date", new Date().toISOString())
-        .neq("status", "CONCLUDED")
+        .not("status", "in", "(ENDED,CONCLUDED)")
         .order("date", { ascending: true }),
     ],
   );

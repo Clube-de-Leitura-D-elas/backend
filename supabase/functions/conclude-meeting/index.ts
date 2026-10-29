@@ -86,7 +86,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { data: updated, error: updateError } = await ctx.supabaseAdmin
     .from("meetings")
-    .update({ status: "CONCLUDED" })
+    .update({ status: "ENDED" })
     .eq("id", meeting.id)
     .in("status", CONCLUDABLE_STATUSES)
     .select("id, status")

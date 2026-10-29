@@ -36,7 +36,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   // Mesma regra da add-meeting-photo: o app usa este campo para mostrar ou
   // esconder o botão de adicionar foto. Só libera depois do encerramento.
   let canAddPhotos = false;
-  if (meeting.status === "CONCLUDED") {
+  if (meeting.status === "ENDED" || meeting.status === "CONCLUDED") {
     const allowed = await isGroupCoordinatorOrMeetingHost(
       ctx,
       meeting.groupId,
