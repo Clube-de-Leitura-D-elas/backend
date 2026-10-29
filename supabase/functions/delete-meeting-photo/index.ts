@@ -7,6 +7,8 @@ import { requireMeetingRecordManager } from "../_shared/meetingRecord.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
 const LOG_LABEL = "delete-meeting-photo";
+// O app usa esta mensagem para tratar a foto como já removida.
+const PHOTO_NOT_FOUND = "photo not found in this meeting";
 
 type Ctx = SupabaseContext<Database>;
 
@@ -47,22 +49,26 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return serverError();
   }
   if (!data) {
-    // Uma remoção anterior pode ter apagado a foto e falhado ao reabrir o
-    // registro; refazer a reabertura aqui destrava esse caso no retry.
-    const reopened = await reopenRecordWhenEmpty(ctx, meetingId);
-    if (reopened instanceof Response) return reopened;
-    return Response.json({ error: "photo not found in this meeting" }, {
-      status: 404,
-    });
+    return Response.json({ error: PHOTO_NOT_FOUND }, { status: 404 });
   }
 
   const row = data as unknown as MeetingPhotoRow;
+
+  // Reabre antes de apagar: se a reabertura falhar, nada foi removido e o
+  // retry começa do zero.
+  const reopenError = await reopenRecordWhenLastPhoto(
+    ctx,
+    meetingId,
+    row.photo_id,
+  );
+  if (reopenError) return reopenError;
+
   const deleteError = await deletePhotoRows(ctx, row.photo_id);
   if (deleteError) return deleteError;
 
   await removeStorageObject(ctx, meetingId, row.photos?.url);
 
-  const status = await reopenRecordWhenEmpty(ctx, meetingId);
+  const status = await findMeetingStatus(ctx, meetingId);
   if (status instanceof Response) return status;
 
   return Response.json({ meeting_id: meetingId, photo_id: row.photo_id, status });
@@ -101,41 +107,48 @@ async function removeStorageObject(
   if (error) logError("storage remove error", error.message);
 }
 
-// Sem nenhuma foto oficial, o registro volta a ficar pendente:
-// CONCLUDED -> ENDED, o inverso do que a add-meeting-photo faz.
-// Devolve o status do encontro depois da checagem.
-async function reopenRecordWhenEmpty(
+// Sem nenhuma foto, o registro volta a ficar pendente: CONCLUDED -> ENDED,
+// o inverso do que a add-meeting-photo faz. Conta qualquer foto, não só as
+// oficiais: fotos antigas nasceram com is_sketch = true por padrão.
+async function reopenRecordWhenLastPhoto(
   ctx: Ctx,
   meetingId: string,
-): Promise<string | Response> {
+  photoId: string,
+): Promise<Response | null> {
   const { count, error } = await ctx.supabaseAdmin
     .from("meeting_photos")
     .select("photo_id", { count: "exact", head: true })
     .eq("meeting_id", meetingId)
-    .eq("is_sketch", false);
+    .neq("photo_id", photoId);
   if (error) {
     logError("count error", error.message);
     return serverError();
   }
-  if ((count ?? 0) === 0) {
-    const { error: updateError } = await ctx.supabaseAdmin
-      .from("meetings")
-      .update({ status: "ENDED" })
-      .eq("id", meetingId)
-      .eq("status", "CONCLUDED");
-    if (updateError) {
-      logError("reopen error", updateError.message);
-      return serverError();
-    }
-  }
+  if ((count ?? 0) > 0) return null;
 
-  const { data, error: statusError } = await ctx.supabaseAdmin
+  const { error: updateError } = await ctx.supabaseAdmin
+    .from("meetings")
+    .update({ status: "ENDED" })
+    .eq("id", meetingId)
+    .eq("status", "CONCLUDED");
+  if (updateError) {
+    logError("reopen error", updateError.message);
+    return serverError();
+  }
+  return null;
+}
+
+async function findMeetingStatus(
+  ctx: Ctx,
+  meetingId: string,
+): Promise<string | Response> {
+  const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
     .select("status")
     .eq("id", meetingId)
     .single();
-  if (statusError) {
-    logError("status error", statusError.message);
+  if (error) {
+    logError("status error", error.message);
     return serverError();
   }
   return data.status as string;
