@@ -554,3 +554,12 @@ verify_jwt = true
 import_map = "./functions/set-meeting-presence/deno.json"
 entrypoint = "./functions/set-meeting-presence/index.ts"
 
+[functions.delete-meeting-photo]
+enabled = true
+verify_jwt = true
+import_map = "./functions/delete-meeting-photo/deno.json"
+
+[functions.update-meeting-promo-text]
+enabled = true
+verify_jwt = true
+import_map = "./functions/update-meeting-promo-text/deno.json"
