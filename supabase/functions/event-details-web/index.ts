@@ -20,6 +20,14 @@ type EventRow = {
     author: string;
     photos: { url: string } | null;
   } | null;
+  locations: { name: string; address: string | null } | null;
+  host: {
+    users: {
+      id: string;
+      name: string;
+      photos: { url: string } | null;
+    } | null;
+  } | null;
 };
 
 // Detalhes de um evento (encontro) no painel web. Query string: eventId.
@@ -38,7 +46,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
-      "id, date, groups!inner(id, number, description, cities(name)), books(id, name, author, photos(url))",
+      "id, date, groups!inner(id, number, description, cities(name)), books(id, name, author, photos(url)), locations(name, address), host:group_users!meetings_host_id_fkey(users(id, name, photos(url)))",
     )
     .eq("id", eventId)
     .not("date", "is", null)
@@ -73,6 +81,19 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         title: event.books.name,
         author: event.books.author,
         coverUrl: event.books.photos?.url ?? null,
+      }
+      : null,
+    location: event.locations
+      ? {
+        name: event.locations.name,
+        address: event.locations.address ?? null,
+      }
+      : null,
+    host: event.host?.users
+      ? {
+        id: event.host.users.id,
+        name: event.host.users.name,
+        photoUrl: event.host.users.photos?.url ?? null,
       }
       : null,
   });
