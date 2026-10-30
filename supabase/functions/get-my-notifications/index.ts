@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { oneLine } from "../_shared/log.ts";
+import { parseListParams } from "../_shared/pagination.ts";
 
 const LOG_LABEL = "get-my-notifications";
 
@@ -20,7 +21,7 @@ type TargetRow = {
 
 // Notificações da usuária autenticada, mais recentes primeiro. Uma notificação
 // agendada só aparece quando `scheduled_for` chega.
-Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
+Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const authUserId = ctx.userClaims?.id;
   if (!authUserId) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -41,13 +42,18 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     return Response.json({ error: "User profile not found" }, { status: 404 });
   }
 
-  const { data, error } = await ctx.supabaseAdmin
+  const { from, to } = parseListParams(new URL(req.url));
+  const { data, error, count } = await ctx.supabaseAdmin
     .from("notifications_targets")
     .select(
       "id, read_at, meeting_id, group_id, notifications!inner(title, message, type, scheduled_for)",
+      { count: "exact" },
     )
     .eq("user_id", profile.id)
-    .lte("notifications.scheduled_for", new Date().toISOString());
+    .lte("notifications.scheduled_for", new Date().toISOString())
+    .order("notifications(scheduled_for)", { ascending: false })
+    .order("id")
+    .range(from, to);
 
   if (error) {
     console.error(`${LOG_LABEL} error`, oneLine(error.message));
@@ -55,10 +61,6 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
   }
 
   const notifications = ((data ?? []) as unknown as TargetRow[])
-    .sort((a, b) =>
-      Date.parse(b.notifications.scheduled_for) -
-      Date.parse(a.notifications.scheduled_for)
-    )
     .map((target) => ({
       id: target.id,
       title: target.notifications.title,
@@ -71,5 +73,5 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
       group_id: target.group_id,
     }));
 
-  return Response.json({ notifications });
+  return Response.json({ notifications, total: count ?? 0 });
 }));

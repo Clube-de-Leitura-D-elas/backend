@@ -73,21 +73,44 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     });
   }
 
+  // O filtro `read_at is null` no próprio UPDATE evita que uma chamada
+  // simultânea sobrescreva a data da primeira leitura.
   const { data: updated, error: updateError } = await ctx.supabaseAdmin
     .from("notifications_targets")
     .update({ read_at: new Date().toISOString() })
     .eq("id", target.id)
+    .is("read_at", null)
     .select("id, read_at")
-    .single();
+    .maybeSingle();
 
   if (updateError) {
     console.error(`${LOG_LABEL} update error`, oneLine(updateError.message));
     return Response.json({ error: updateError.message }, { status: 500 });
   }
 
+  if (updated) {
+    return Response.json({
+      id: updated.id,
+      is_read: true,
+      read_at: updated.read_at,
+    });
+  }
+
+  // Outra chamada marcou antes: devolve a data gravada por ela.
+  const { data: current, error: currentError } = await ctx.supabaseAdmin
+    .from("notifications_targets")
+    .select("id, read_at")
+    .eq("id", target.id)
+    .single();
+
+  if (currentError) {
+    console.error(`${LOG_LABEL} reread error`, oneLine(currentError.message));
+    return Response.json({ error: currentError.message }, { status: 500 });
+  }
+
   return Response.json({
-    id: updated.id,
+    id: current.id,
     is_read: true,
-    read_at: updated.read_at,
+    read_at: current.read_at,
   });
 }));
