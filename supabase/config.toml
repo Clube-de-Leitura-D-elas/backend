@@ -514,33 +514,35 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/get-groups-web/index.ts"
 
+[functions.calendar-month]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/calendar-month/index.ts"
+
 [functions.search-places]
 enabled = true
 verify_jwt = true
 import_map = "./functions/search-places/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
 entrypoint = "./functions/search-places/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/search-places/*.html" ]
 
 [functions.update-group-status-web]
 enabled = true
 verify_jwt = true
 import_map = "./functions/update-group-status-web/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
 entrypoint = "./functions/update-group-status-web/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/update-group-status-web/*.html" ]
 
 [functions.get-meeting-tasks]
 enabled = true
 verify_jwt = true
 import_map = "./functions/get-meeting-tasks/deno.json"
 entrypoint = "./functions/get-meeting-tasks/index.ts"
+
+[functions.conclude-meeting]
+enabled = true
+verify_jwt = true
+import_map = "./functions/conclude-meeting/deno.json"
+entrypoint = "./functions/conclude-meeting/index.ts"
+
 [functions.event-details-web]
 enabled = true
 verify_jwt = true
@@ -557,3 +559,43 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/mark-notification-read/deno.json"
 entrypoint = "./functions/mark-notification-read/index.ts"
+[functions.set-meeting-presence]
+enabled = true
+verify_jwt = true
+import_map = "./functions/set-meeting-presence/deno.json"
+entrypoint = "./functions/set-meeting-presence/index.ts"
+
+[functions.delete-meeting-photo]
+enabled = true
+verify_jwt = true
+import_map = "./functions/delete-meeting-photo/deno.json"
+
+[functions.update-meeting-promo-text]
+enabled = true
+verify_jwt = true
+import_map = "./functions/update-meeting-promo-text/deno.json"
+
+[functions.get-eligible-raffle-participants]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-eligible-raffle-participants/deno.json"
+
+[functions.confirm-meeting-raffle]
+enabled = true
+verify_jwt = true
+import_map = "./functions/confirm-meeting-raffle/deno.json"
+
+[functions.draw-meeting-raffle]
+enabled = true
+verify_jwt = true
+import_map = "./functions/draw-meeting-raffle/deno.json"
+
+[functions.get-meeting-raffle-result]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-meeting-raffle-result/deno.json"
+
+[functions.confirm-meeting-raffle-winner]
+enabled = true
+verify_jwt = true
+import_map = "./functions/confirm-meeting-raffle-winner/deno.json"

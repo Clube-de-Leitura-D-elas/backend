@@ -17,6 +17,7 @@ const MAX_PHOTOS_PER_MEETING = 50;
 const MAX_BASE64_LENGTH = Math.ceil(MAX_PHOTO_BYTES / 3) * 4;
 const MAX_BODY_BYTES = MAX_BASE64_LENGTH + 4096;
 const PHOTO_LIMIT_ERRCODE = "P0050";
+const PHOTO_STATUSES = ["ENDED", "CONCLUDED"];
 
 const HEIC_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "mif1", "msf1"]);
 
@@ -71,6 +72,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     });
   }
 
+  // Mesma regra do can_add_photos da get-meeting-photos: o registro só
+  // libera depois do encerramento.
+  if (!PHOTO_STATUSES.includes(meeting.status)) {
+    return Response.json({
+      error: "photos can only be added after the meeting is ended",
+    }, { status: 409 });
+  }
+
   const existing = await findExistingPhoto(ctx, req, request);
   if (existing) return existing;
 
@@ -80,8 +89,36 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const bytes = decodePhoto(request);
   if (bytes instanceof Response) return bytes;
 
-  return await storePhoto(ctx, req, request, bytes, member.profileId);
+  const response = await storePhoto(
+    ctx,
+    req,
+    request,
+    bytes,
+    member.profileId,
+  );
+  // Enviar a foto oficial conclui o registro: ENDED -> CONCLUDED.
+  if (response.status === 201) {
+    const concludeError = await concludeMeeting(ctx, request.meetingId);
+    if (concludeError) return concludeError;
+  }
+  return response;
 }));
+
+async function concludeMeeting(
+  ctx: Ctx,
+  meetingId: string,
+): Promise<Response | null> {
+  const { error } = await ctx.supabaseAdmin
+    .from("meetings")
+    .update({ status: "CONCLUDED" })
+    .eq("id", meetingId)
+    .eq("status", "ENDED");
+  if (error) {
+    logError("conclude error", error.message);
+    return serverError();
+  }
+  return null;
+}
 
 async function readPhotoRequest(
   req: Request,
@@ -269,6 +306,7 @@ async function insertPhotoRows(
       photo_id: request.photoId,
       meeting_id: request.meetingId,
       is_cover: false,
+      is_sketch: false,
     });
   if (!linkError) return null;
 

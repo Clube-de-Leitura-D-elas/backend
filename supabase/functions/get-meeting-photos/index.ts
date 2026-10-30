@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { withSupabase } from "jsr:@supabase/server@^1";
+import { type SupabaseContext, withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import {
   isGroupCoordinatorOrMeetingHost,
@@ -34,15 +34,19 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (member instanceof Response) return member;
 
   // Mesma regra da add-meeting-photo: o app usa este campo para mostrar ou
-  // esconder o botão de adicionar foto.
-  const canAddPhotos = await isGroupCoordinatorOrMeetingHost(
-    ctx,
-    meeting.groupId,
-    member.profileId,
-    meeting.hostId,
-    "get-meeting-photos",
-  );
-  if (canAddPhotos instanceof Response) return canAddPhotos;
+  // esconder o botão de adicionar foto. Só libera depois do encerramento.
+  let canAddPhotos = false;
+  if (meeting.status === "ENDED" || meeting.status === "CONCLUDED") {
+    const allowed = await isGroupCoordinatorOrMeetingHost(
+      ctx,
+      meeting.groupId,
+      member.profileId,
+      meeting.hostId,
+      "get-meeting-photos",
+    );
+    if (allowed instanceof Response) return allowed;
+    canAddPhotos = allowed;
+  }
 
   const { data, error } = await ctx.supabaseAdmin
     .from("meeting_photos")
@@ -73,5 +77,35 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const signed = await signMeetingPhotos(ctx, req, meetingId, photos);
   if (signed instanceof Response) return signed;
 
-  return Response.json({ photos: signed, can_add_photos: canAddPhotos });
+  const promoText = await findPromoText(ctx, meetingId);
+  if (promoText instanceof Response) return promoText;
+
+  return Response.json({
+    photos: signed,
+    promo_text: promoText,
+    can_add_photos: canAddPhotos,
+  });
 }));
+
+async function findPromoText(
+  ctx: SupabaseContext<Database>,
+  meetingId: string,
+): Promise<string | null | Response> {
+  const { data, error } = await ctx.supabaseAdmin
+    .from("meetings")
+    .select("promo_text")
+    .eq("id", meetingId)
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      "get-meeting-photos promo text error",
+      error.message.replace(/[\r\n]/g, " "),
+    );
+    return Response.json({ error: "Unable to load meeting photos" }, {
+      status: 500,
+    });
+  }
+
+  return (data?.promo_text as string | null | undefined) ?? null;
+}

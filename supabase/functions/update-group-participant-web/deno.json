@@ -1,0 +1,5 @@
+{
+  "imports": {
+    "@supabase/server": "jsr:@supabase/server@^1"
+  }
+}

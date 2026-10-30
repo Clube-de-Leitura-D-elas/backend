@@ -24,7 +24,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       user_id,
       users!inner(name, photos(url))
     `)
-    .eq("group_id", groupId);
+    .eq("group_id", groupId)
+    .eq("registration_status", "ACTIVE");
 
   if (usersError) {
     console.error(
