@@ -605,3 +605,8 @@ import_map = "./functions/confirm-meeting-raffle-winner/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/set-profile-photo/deno.json"
+
+[functions.get-participant-presence-history]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-participant-presence-history/deno.json"
