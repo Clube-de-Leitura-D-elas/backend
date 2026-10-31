@@ -3,6 +3,7 @@ import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { oneLine } from "../_shared/log.ts";
 import { readMeetingIdParam } from "../_shared/meeting.ts";
+import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 import { requireRole } from "../_shared/role.ts";
 
 type EventRow = {
@@ -115,13 +116,19 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     if (!rowsByUser.has(row.user_id)) rowsByUser.set(row.user_id, row);
   }
 
+  const resolvePhotoUrl = await resolveProfilePhotoUrls(ctx, req, [
+    event.host?.users?.photos?.url,
+    ...[...rowsByUser.values()].map((row) => row.users.photos?.url),
+  ]);
+  if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
+
   const participants = [...rowsByUser.values()]
     .map((row) => {
       const status = presenceByUser.get(row.user_id);
       return {
         id: row.user_id,
         name: row.users.name,
-        photoUrl: row.users.photos?.url ?? null,
+        photoUrl: resolvePhotoUrl(row.users.photos?.url),
         // sem registro de presença fica nulo
         attended: status ? status === "PRESENT" : null,
       };
@@ -155,7 +162,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       ? {
         id: event.host.users.id,
         name: event.host.users.name,
-        photoUrl: event.host.users.photos?.url ?? null,
+        photoUrl: resolvePhotoUrl(event.host.users.photos?.url),
       }
       : null,
     attendance: {

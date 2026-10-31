@@ -3,6 +3,7 @@ import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { requireGroupMember } from "../_shared/group.ts";
 import { findMeetingGroupId, readMeetingIdParam } from "../_shared/meeting.ts";
+import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const meetingId = readMeetingIdParam(new URL(req.url));
@@ -81,11 +82,18 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     ]),
   );
 
+  const resolvePhotoUrl = await resolveProfilePhotoUrls(
+    ctx,
+    req,
+    (groupUsers ?? []).map((row: any) => row.users?.photos?.url),
+  );
+  if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
+
   const attendanceList = (groupUsers ?? []).map((row: any) => {
     return {
       id: row.user_id,
       name: row.users?.name ?? "",
-      photo_url: row.users?.photos?.url ?? null,
+      photo_url: resolvePhotoUrl(row.users?.photos?.url),
       invitation_status: invitationMap.get(row.user_id) ?? "PENDING",
       presence_status: presenceMap.get(row.user_id) ?? null,
     };

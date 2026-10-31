@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { readGroupIdParam, requireGroupMember } from "../_shared/group.ts";
+import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 
 type GroupUserRow = {
   is_coordinator: boolean;
@@ -54,11 +55,18 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const rows = (data ?? []) as unknown as GroupUserRow[];
 
+  const resolvePhotoUrl = await resolveProfilePhotoUrls(
+    ctx,
+    req,
+    rows.map((row) => row.users.photos?.url),
+  );
+  if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
+
   return Response.json({
     participants: rows.map((row) => ({
       id: row.users.id,
       name: row.users.name,
-      photo_url: row.users.photos?.url ?? null,
+      photo_url: resolvePhotoUrl(row.users.photos?.url),
       role: row.is_coordinator ? "coordinator" : "member",
     })),
   });

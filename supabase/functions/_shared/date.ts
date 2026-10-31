@@ -18,3 +18,8 @@ export function toLocalDate(
   // en-CA formata como YYYY-MM-DD.
   return date.toLocaleDateString("en-CA", { timeZone: SAO_PAULO });
 }
+
+export function todayInSaoPaulo(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: SAO_PAULO })
+    .format(new Date());
+}

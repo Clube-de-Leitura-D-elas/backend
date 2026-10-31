@@ -1,6 +1,7 @@
 import type { SupabaseContext } from "jsr:@supabase/server@^1";
 import type { Database } from "./database.ts";
 import { oneLine } from "./log.ts";
+import { resolveProfilePhotoUrls } from "./profilePhoto.ts";
 import { isUuid } from "./uuid.ts";
 
 type Ctx = SupabaseContext<Database>;
@@ -63,6 +64,7 @@ type GroupLinks = {
  */
 export async function loadRaffleCandidates(
   ctx: Ctx,
+  req: Request,
   meetingId: string,
   groupId: string,
   logLabel: string,
@@ -115,6 +117,12 @@ export async function loadRaffleCandidates(
 
   const currentHostId = await findMeetingHostUserId(ctx, meetingId, logLabel);
   if (currentHostId instanceof Response) return currentHostId;
+  const resolvePhotoUrl = await resolveProfilePhotoUrls(
+    ctx,
+    req,
+    memberRows.map((row) => row.users.photos?.url),
+  );
+  if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
 
   return [...members.values()]
     .map(({ row, linkIds }) => {
@@ -122,10 +130,10 @@ export async function loadRaffleCandidates(
       const available = own.find((s) => !usedBooks.has(s.book_id));
       const isCurrentHost = row.user_id === currentHostId;
       const book = isCurrentHost ? undefined : available;
-      return {
+       return {
         userId: row.user_id,
         name: row.users.name,
-        avatarUrl: row.users.photos?.url ?? null,
+        avatarUrl: resolvePhotoUrl(row.users.photos?.url),
         book: book ? toRaffleBook(book) : null,
         exclusionReason: isCurrentHost
           ? CURRENT_HOST_REASON
