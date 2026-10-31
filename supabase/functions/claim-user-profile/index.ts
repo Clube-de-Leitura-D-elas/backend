@@ -103,12 +103,24 @@ serve(async (req) => {
 
   // 4. Insert Book Suggestion
   if (pendingUser.book_name) {
-    await supabaseAdmin.from('book_suggestions').insert([
+    const { error: suggestionError } = await supabaseAdmin.from('onboarding_book_suggestions').insert([
       {
         name: pendingUser.book_name,
         user_id: newUserId
       }
     ]);
+
+    if (suggestionError) {
+      console.error("Book suggestion insert error:", suggestionError);
+      // Undo the user so the claim can be retried with the same token
+      const { error: rollbackError } = await supabaseAdmin.from('users').delete().eq('id', newUserId);
+      if (rollbackError) console.error("Rollback error:", rollbackError);
+      return new Response(JSON.stringify({
+        error: suggestionError.message
+      }), {
+        status: 500
+      });
+    }
   }
 
   // 5. Update Pending User
