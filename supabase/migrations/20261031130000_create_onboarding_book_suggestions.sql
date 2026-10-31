@@ -6,8 +6,9 @@
 -- insert do claim-user-profile sempre falhava. book_suggestions continua só
 -- com as indicações de livro do grupo, que concorrem no sorteio.
 --
--- RLS: como o resto do schema, a tabela é acessada só pelas edge functions
--- com service role.
+-- RLS ativo e sem policies: anon e authenticated não leem nem escrevem pela
+-- REST, mesmo que recebam privilégios por default. As edge functions usam a
+-- service role, que ignora RLS.
 
 CREATE TABLE public.onboarding_book_suggestions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -18,6 +19,8 @@ CREATE TABLE public.onboarding_book_suggestions (
   CONSTRAINT onboarding_book_suggestions_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE
 );
+
+ALTER TABLE public.onboarding_book_suggestions ENABLE ROW LEVEL SECURITY;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.onboarding_book_suggestions
 TO service_role;

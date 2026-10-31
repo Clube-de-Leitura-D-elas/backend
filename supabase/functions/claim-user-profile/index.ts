@@ -95,7 +95,7 @@ serve(async (req) => {
   if (insertError) {
     console.error("Insert error:", insertError);
     return new Response(JSON.stringify({
-      error: insertError.message
+      error: 'Não foi possível concluir o cadastro'
     }), {
       status: 500
     });
@@ -116,7 +116,7 @@ serve(async (req) => {
       const { error: rollbackError } = await supabaseAdmin.from('users').delete().eq('id', newUserId);
       if (rollbackError) console.error("Rollback error:", rollbackError);
       return new Response(JSON.stringify({
-        error: suggestionError.message
+        error: 'Não foi possível concluir o cadastro'
       }), {
         status: 500
       });
