@@ -3,7 +3,7 @@ import type { Database } from "./database.ts";
 
 export const MEETING_PHOTOS_BUCKET = "meeting-photos";
 
-const SIGNED_URL_TTL_SECONDS = 60 * 60;
+export const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const ABSOLUTE_URL_REGEX = /^https?:\/\//i;
 
 export type MeetingPhoto = { id: string; url: string };
@@ -57,9 +57,7 @@ export async function signMeetingPhotos(
   });
 }
 
-// The local edge runtime signs with its internal gateway host (kong:8000),
-// which devices cannot reach; rewrite it to the origin the client called.
-function toPublicUrl(signedUrl: string, req: Request): string {
+export function toPublicUrl(signedUrl: string, req: Request): string {
   const url = new URL(signedUrl);
   if (url.hostname !== "kong") return signedUrl;
 
