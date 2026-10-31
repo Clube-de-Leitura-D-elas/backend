@@ -4,6 +4,7 @@ import type { Database } from "../_shared/database.ts";
 import { requireGroupMember } from "../_shared/group.ts";
 import { oneLine } from "../_shared/log.ts";
 import { findMeetingGroupId } from "../_shared/meeting.ts";
+import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 import { readJsonBody, readMeetingId } from "../_shared/raffle.ts";
 
 const LOG_LABEL = "get-meeting-raffle-result";
@@ -53,11 +54,17 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (!data) return Response.json(null);
 
   const row = data as unknown as RaffleRow;
+
+  const resolvePhotoUrl = await resolveProfilePhotoUrls(ctx, req, [
+    row.winner?.photos?.url,
+  ]);
+  if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
+
   return Response.json({
     meeting_id: row.meeting_id,
     winner_id: row.winner_user_id,
     winner_name: row.winner?.name ?? "",
-    winner_avatar_url: row.winner?.photos?.url ?? null,
+    winner_avatar_url: resolvePhotoUrl(row.winner?.photos?.url),
     book_title: row.books?.name ?? "",
     book_author: row.books?.author ?? null,
     book_cover_url: row.books?.photos?.url ?? null,

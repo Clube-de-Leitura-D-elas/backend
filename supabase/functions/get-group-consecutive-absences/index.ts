@@ -7,6 +7,7 @@ import {
 } from "../_shared/group.ts";
 import { oneLine } from "../_shared/log.ts";
 import { isPresent } from "../_shared/presence.ts";
+import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 
 const LOG_LABEL = "get-group-consecutive-absences";
 
@@ -129,20 +130,31 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     }
   }
 
-  const participants = members
+  const flagged = members
     .map((row) => ({
-      id: row.users.id,
-      name: row.users.name,
-      photo_url: row.users.photos?.url ?? null,
+      row,
       consecutive_absences: countConsecutiveAbsences(
         row.users.id,
         meetingIds,
         presenceByKey,
       ),
     }))
-    .filter((participant) =>
-      participant.consecutive_absences >= MIN_CONSECUTIVE_ABSENCES
-    )
+    .filter((item) => item.consecutive_absences >= MIN_CONSECUTIVE_ABSENCES);
+
+  const resolvePhotoUrl = await resolveProfilePhotoUrls(
+    ctx,
+    req,
+    flagged.map((item) => item.row.users.photos?.url),
+  );
+  if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
+
+  const participants = flagged
+    .map(({ row, consecutive_absences }) => ({
+      id: row.users.id,
+      name: row.users.name,
+      photo_url: resolvePhotoUrl(row.users.photos?.url),
+      consecutive_absences,
+    }))
     .sort((a, b) =>
       b.consecutive_absences - a.consecutive_absences ||
       a.name.localeCompare(b.name, "pt-BR")

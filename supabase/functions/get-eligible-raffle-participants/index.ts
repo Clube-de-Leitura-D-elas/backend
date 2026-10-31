@@ -22,6 +22,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const candidates = await loadRaffleCandidates(
     ctx,
+    req,
     meetingId,
     meeting.groupId,
     LOG_LABEL,

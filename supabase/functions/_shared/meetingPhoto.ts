@@ -1,9 +1,9 @@
 import type { SupabaseContext } from "jsr:@supabase/server@^1";
 import type { Database } from "./database.ts";
+import { SIGNED_URL_TTL_SECONDS, toPublicUrl } from "./signedUrl.ts";
 
 export const MEETING_PHOTOS_BUCKET = "meeting-photos";
 
-export const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const ABSOLUTE_URL_REGEX = /^https?:\/\//i;
 
 export type MeetingPhoto = { id: string; url: string };
@@ -55,17 +55,4 @@ export async function signMeetingPhotos(
     }
     return [{ id: photo.id, url: signedUrl }];
   });
-}
-
-export function toPublicUrl(signedUrl: string, req: Request): string {
-  const url = new URL(signedUrl);
-  if (url.hostname !== "kong") return signedUrl;
-
-  const host = req.headers.get("x-forwarded-host");
-  if (!host) return signedUrl;
-
-  url.protocol = req.headers.get("x-forwarded-proto") ?? url.protocol;
-  const port = req.headers.get("x-forwarded-port");
-  url.host = host.includes(":") || !port ? host : `${host}:${port}`;
-  return url.toString();
 }

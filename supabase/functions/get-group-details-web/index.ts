@@ -4,6 +4,7 @@ import type { Database } from "../_shared/database.ts";
 import { readGroupIdParam } from "../_shared/group.ts";
 import { readNeighborhood } from "../_shared/location.ts";
 import { oneLine } from "../_shared/log.ts";
+import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 import { requireRole } from "../_shared/role.ts";
 
 // `group_users.registration_status` é varchar livre; "ACTIVE" é o único valor
@@ -120,6 +121,11 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     | null;
   const meeting = meetingResult.data as unknown as NextMeetingRow | null;
 
+  const resolvePhotoUrl = await resolveProfilePhotoUrls(ctx, req, [
+    coordinator?.users.photos?.url,
+  ]);
+  if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
+
   return Response.json({
     id: group.id,
     number: group.number,
@@ -130,7 +136,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     active_participants_count: countResult.count ?? 0,
     coordinator_name: coordinator?.users.name ?? null,
     coordinator_email: coordinator?.users.email ?? null,
-    coordinator_photo: coordinator?.users.photos?.url ?? null,
+    coordinator_photo: resolvePhotoUrl(coordinator?.users.photos?.url),
     next_meeting: meeting
       ? {
         date: meeting.date,

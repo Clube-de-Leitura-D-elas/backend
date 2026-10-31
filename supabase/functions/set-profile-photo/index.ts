@@ -3,17 +3,17 @@ import { type SupabaseContext, withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { todayInSaoPaulo } from "../_shared/date.ts";
 import {
-  MEETING_PHOTOS_BUCKET,
-  SIGNED_URL_TTL_SECONDS,
-  toPublicUrl,
-} from "../_shared/meetingPhoto.ts";
-import {
   decodePhoto,
   EXTENSION_BY_CONTENT_TYPE,
   MAX_BASE64_LENGTH,
   MAX_BODY_BYTES,
   photoTooLarge,
 } from "../_shared/photoUpload.ts";
+import {
+  PROFILE_PHOTOS_BUCKET,
+  profilePhotoFolder,
+  resolveProfilePhotoUrls,
+} from "../_shared/profilePhoto.ts";
 
 type Ctx = SupabaseContext<Database>;
 
@@ -23,8 +23,14 @@ type PhotoRequest = {
   encoded: string;
 };
 
-// Troca a foto de perfil da leitora autenticada. A foto anterior fica órfã:
-// o registro em photos e o objeto no storage não são apagados.
+type ProfileRow = {
+  id: string;
+  photo_id: string | null;
+  photos: { url: string } | null;
+};
+
+// Troca a foto de perfil da leitora autenticada e apaga a anterior (registro
+// em photos e objeto no storage), que não é referenciada em mais nenhum lugar.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const request = await readPhotoRequest(req);
   if (request instanceof Response) return request;
@@ -34,9 +40,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: profile, error: profileError } = await ctx.supabaseAdmin
+  const { data: profileData, error: profileError } = await ctx.supabaseAdmin
     .from("users")
-    .select("id")
+    .select("id, photo_id, photos(url)")
     .eq("user_id", authUserId)
     .maybeSingle();
 
@@ -44,9 +50,10 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     logError("profile error", profileError.message);
     return serverError();
   }
-  if (!profile) {
+  if (!profileData) {
     return Response.json({ error: "User profile not found" }, { status: 404 });
   }
+  const profile = profileData as unknown as ProfileRow;
 
   const bytes = decodePhoto(request.encoded, request.contentType, {
     encoded: "encoded",
@@ -55,8 +62,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (bytes instanceof Response) return bytes;
 
   const photoId = crypto.randomUUID();
-  const objectPath = `profiles/${profile.id}/${photoId}.${request.extension}`;
-  const storage = ctx.supabaseAdmin.storage.from(MEETING_PHOTOS_BUCKET);
+  const folder = profilePhotoFolder(profile.id);
+  const objectPath = `${folder}${photoId}.${request.extension}`;
+  const storage = ctx.supabaseAdmin.storage.from(PROFILE_PHOTOS_BUCKET);
 
   const { error: uploadError } = await storage.upload(objectPath, bytes, {
     contentType: request.contentType,
@@ -80,16 +88,17 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return serverError();
   }
 
-  const { data: signed, error: signError } = await storage.createSignedUrl(
-    objectPath,
-    SIGNED_URL_TTL_SECONDS,
-  );
-  if (signError || !signed?.signedUrl) {
-    logError("sign error", signError?.message ?? "missing signed url");
-    return serverError();
-  }
+  await removePreviousPhoto(ctx, profile);
 
-  return Response.json({ photo_url: toPublicUrl(signed.signedUrl, req) });
+  const resolvePhotoUrl = await resolveProfilePhotoUrls(ctx, req, [
+    objectPath,
+  ]);
+  if (resolvePhotoUrl instanceof Response) return serverError();
+
+  const photoUrl = resolvePhotoUrl(objectPath);
+  if (!photoUrl) return serverError();
+
+  return Response.json({ photo_url: photoUrl });
 }));
 
 async function readPhotoRequest(
@@ -118,10 +127,6 @@ async function readPhotoRequest(
       'missing/invalid "contentType" (expected one of: ' +
         Object.keys(EXTENSION_BY_CONTENT_TYPE).join(", ") + ")",
     );
-  }
-
-  if (body?.extension !== extension) {
-    return badRequest(`missing/invalid "extension" (expected "${extension}")`);
   }
 
   const encoded = body?.encoded;
@@ -166,6 +171,31 @@ async function savePhoto(
   if (rollbackError) logError("rollback error", rollbackError.message);
 
   return userError;
+}
+
+// Só apaga a foto que esta função enviou para a própria leitora; uma URL
+// absoluta (seed) ou de outra pasta fica intacta. Falha aqui não desfaz a troca.
+async function removePreviousPhoto(ctx: Ctx, profile: ProfileRow) {
+  const url = profile.photos?.url;
+  if (!profile.photo_id || !url?.startsWith(profilePhotoFolder(profile.id))) {
+    return;
+  }
+
+  const { error: deleteError } = await ctx.supabaseAdmin
+    .from("photos")
+    .delete()
+    .eq("id", profile.photo_id);
+  if (deleteError) {
+    logError("previous photo delete error", deleteError.message);
+    return;
+  }
+
+  const { error: removeError } = await ctx.supabaseAdmin.storage
+    .from(PROFILE_PHOTOS_BUCKET)
+    .remove([url]);
+  if (removeError) {
+    logError("previous photo remove error", removeError.message);
+  }
 }
 
 function logError(label: string, message: string) {
