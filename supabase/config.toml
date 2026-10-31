@@ -600,3 +600,8 @@ import_map = "./functions/get-meeting-raffle-result/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/confirm-meeting-raffle-winner/deno.json"
+
+[functions.get-participant-presence-history]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-participant-presence-history/deno.json"
