@@ -1,6 +1,7 @@
 import type { SupabaseContext } from "jsr:@supabase/server@^1";
 import type { Database } from "./database.ts";
 import { oneLine } from "./log.ts";
+import { resolveProfilePhotoUrls } from "./profilePhoto.ts";
 import { isUuid } from "./uuid.ts";
 
 type Ctx = SupabaseContext<Database>;
@@ -50,6 +51,7 @@ type SuggestionRow = {
  */
 export async function loadRaffleCandidates(
   ctx: Ctx,
+  req: Request,
   meetingId: string,
   groupId: string,
   logLabel: string,
@@ -100,6 +102,13 @@ export async function loadRaffleCandidates(
   const usedBooks = await findGroupUsedBooks(ctx, groupId, logLabel);
   if (usedBooks instanceof Response) return usedBooks;
 
+  const resolvePhotoUrl = await resolveProfilePhotoUrls(
+    ctx,
+    req,
+    memberRows.map((row) => row.users.photos?.url),
+  );
+  if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
+
   return [...members.values()]
     .map(({ row, linkIds }) => {
       const own = suggestions.filter((s) => linkIds.has(s.group_user_id));
@@ -107,7 +116,7 @@ export async function loadRaffleCandidates(
       return {
         userId: row.user_id,
         name: row.users.name,
-        avatarUrl: row.users.photos?.url ?? null,
+        avatarUrl: resolvePhotoUrl(row.users.photos?.url),
         book: available ? toRaffleBook(available) : null,
         exclusionReason: available
           ? null

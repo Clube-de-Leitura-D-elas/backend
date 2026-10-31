@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { type SupabaseContext, withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
+import { todayInSaoPaulo } from "../_shared/date.ts";
 import {
   isGroupCoordinatorOrMeetingHost,
   requireGroupMemberProfile,
@@ -10,23 +11,18 @@ import {
   MEETING_PHOTOS_BUCKET,
   signMeetingPhotos,
 } from "../_shared/meetingPhoto.ts";
+import {
+  decodePhoto,
+  EXTENSION_BY_CONTENT_TYPE,
+  MAX_BASE64_LENGTH,
+  MAX_BODY_BYTES,
+  photoTooLarge,
+} from "../_shared/photoUpload.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
-const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const MAX_PHOTOS_PER_MEETING = 50;
-const MAX_BASE64_LENGTH = Math.ceil(MAX_PHOTO_BYTES / 3) * 4;
-const MAX_BODY_BYTES = MAX_BASE64_LENGTH + 4096;
 const PHOTO_LIMIT_ERRCODE = "P0050";
 const PHOTO_STATUSES = ["ENDED", "CONCLUDED"];
-
-const HEIC_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "mif1", "msf1"]);
-
-const EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/heic": "heic",
-};
 
 type Ctx = SupabaseContext<Database>;
 
@@ -86,7 +82,10 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const full = await rejectWhenMeetingIsFull(ctx, request.meetingId);
   if (full) return full;
 
-  const bytes = decodePhoto(request);
+  const bytes = decodePhoto(request.encoded, request.contentType, {
+    encoded: "data_base64",
+    contentType: "content_type",
+  });
   if (bytes instanceof Response) return bytes;
 
   const response = await storePhoto(
@@ -225,16 +224,6 @@ async function rejectWhenMeetingIsFull(
   return (count ?? 0) >= MAX_PHOTOS_PER_MEETING ? meetingIsFull() : null;
 }
 
-function decodePhoto(request: PhotoRequest): Uint8Array | Response {
-  const bytes = decodeBase64(request.encoded);
-  if (!bytes) return badRequest('invalid "data_base64"');
-  if (bytes.byteLength > MAX_PHOTO_BYTES) return photoTooLarge();
-  if (!matchesContentType(bytes, request.contentType)) {
-    return badRequest('"data_base64" does not match "content_type"');
-  }
-  return bytes;
-}
-
 async function storePhoto(
   ctx: Ctx,
   req: Request,
@@ -334,54 +323,12 @@ async function signedPhotoResponse(
   return Response.json({ photo: signed[0] }, { status });
 }
 
-function decodeBase64(encoded: string): Uint8Array | null {
-  try {
-    const binary = atob(encoded);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
-  } catch {
-    return null;
-  }
-}
-
-function matchesContentType(bytes: Uint8Array, contentType: string): boolean {
-  const ascii = (start: number, end: number) =>
-    String.fromCharCode(...bytes.subarray(start, end));
-
-  switch (contentType) {
-    case "image/jpeg":
-      return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-    case "image/png":
-      return bytes[0] === 0x89 && ascii(1, 4) === "PNG";
-    case "image/webp":
-      return ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP";
-    case "image/heic":
-      return ascii(4, 8) === "ftyp" && HEIC_BRANDS.has(ascii(8, 12));
-    default:
-      return false;
-  }
-}
-
-function todayInSaoPaulo(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" })
-    .format(new Date());
-}
-
 function logError(label: string, message: string) {
   console.error(`add-meeting-photo ${label}`, message.replace(/[\r\n]/g, " "));
 }
 
 function badRequest(error: string): Response {
   return Response.json({ error }, { status: 400 });
-}
-
-function photoTooLarge(): Response {
-  return Response.json({
-    error: `photo exceeds the maximum of ${MAX_PHOTO_BYTES} bytes`,
-  }, { status: 413 });
 }
 
 function meetingIsFull(): Response {

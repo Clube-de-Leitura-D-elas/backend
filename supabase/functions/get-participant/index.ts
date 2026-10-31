@@ -3,6 +3,7 @@ import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
 import { readParticipantIdParam } from "../_shared/participant.ts";
+import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 import { toLocalDate } from "../_shared/date.ts";
 
 type ParticipantRow = {
@@ -47,11 +48,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { cities, zones, photos, created_at, ...participant } = data as unknown as ParticipantRow;
 
+  const resolvePhotoUrl = await resolveProfilePhotoUrls(ctx, req, [photos?.url]);
+  if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
+
   return Response.json({
     ...participant,
     entry_date: toLocalDate(created_at),
     city: cities?.name ?? null,
     zone: zones?.name ?? null,
-    photo: photos?.url ?? null,
+    photo: resolvePhotoUrl(photos?.url),
   });
 }));
