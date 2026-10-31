@@ -3,8 +3,11 @@ import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { oneLine } from "../_shared/log.ts";
 import { readParticipantIdParam } from "../_shared/participant.ts";
+import type { AppRole } from "../_shared/role.ts";
 
 const LOG_LABEL = "get-participant-presence-history";
+
+const ADMIN_ROLES: readonly AppRole[] = ["MANAGER", "FOUNDER"];
 
 const HELD_MEETING_STATUSES = ["ENDED", "CONCLUDED"];
 
@@ -39,7 +42,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { data: profile, error: profileError } = await ctx.supabaseAdmin
     .from("users")
-    .select("id, is_active")
+    .select("id, is_active, app_role")
     .eq("user_id", authUserId)
     .maybeSingle();
 
@@ -52,6 +55,31 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const participantId = requestedId ?? profile.id;
+  const isSelf = participantId === profile.id;
+  const isAdmin = profile.is_active &&
+    ADMIN_ROLES.includes(profile.app_role as AppRole);
+
+  if (!isSelf && isAdmin) {
+    const { data: participant, error: participantError } = await ctx
+      .supabaseAdmin
+      .from("users")
+      .select("id")
+      .eq("id", participantId)
+      .maybeSingle();
+
+    if (participantError) {
+      console.error(
+        `${LOG_LABEL} participant error`,
+        oneLine(participantError.message),
+      );
+      return serverError();
+    }
+    if (!participant) {
+      return Response.json({ error: "participant not found" }, {
+        status: 404,
+      });
+    }
+  }
 
   const { data: membershipData, error: membershipError } = await ctx
     .supabaseAdmin
@@ -70,7 +98,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   let memberships = (membershipData ?? []) as unknown as MembershipRow[];
 
-  if (participantId !== profile.id) {
+  if (!isSelf && !isAdmin) {
     if (!profile.is_active || memberships.length === 0) return forbidden();
 
     const { data: coordinated, error: coordinatorError } = await ctx
@@ -146,7 +174,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
 function forbidden(): Response {
   return Response.json({
-    error: "Forbidden: own history or group coordinators only.",
+    error: "Forbidden: own history, admins or group coordinators only.",
   }, { status: 403 });
 }
 
