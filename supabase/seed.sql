@@ -496,22 +496,22 @@ WHERE first_meeting.group_id = g.id
 -- ---------------------------------------------------------
 
 -- 8a. Livros já sorteados (um por encontro): saem da concorrência
-INSERT INTO public.book_suggestions (id, book_id, group_user_id, group_id, suggested_at, book_status)
+INSERT INTO public.book_suggestions (id, book_id, group_id, group_user_id, suggested_at, book_status)
 SELECT pg_temp.sid('sug', 'drawn:' || m.key),
        pg_temp.sid('book', m.book::text),
-       pg_temp.sid('gu', m.grp::text || ':' || m.host::text),
        pg_temp.sid('group', m.grp::text),
+       pg_temp.sid('gu', m.grp::text || ':' || m.host::text),
        COALESCE(pg_temp.slot(m.day_offset, 9), now()) - interval '40 days',
        pg_temp.k('suggestion_drawn')::public.book_status
 FROM s_meetings m
 ON CONFLICT (id) DO NOTHING;
 
 -- 8b. Indicações ativas para o próximo sorteio
-INSERT INTO public.book_suggestions (id, book_id, group_user_id, group_id, suggested_at, book_status)
+INSERT INTO public.book_suggestions (id, book_id, group_id, group_user_id, suggested_at, book_status)
 SELECT pg_temp.sid('sug', 'active:' || s.grp::text || ':' || s.book::text),
        pg_temp.sid('book', s.book::text),
-       pg_temp.sid('gu', s.grp::text || ':' || s.usr::text),
        pg_temp.sid('group', s.grp::text),
+       pg_temp.sid('gu', s.grp::text || ':' || s.usr::text),
        now() - s.days_ago * interval '1 day',
        pg_temp.k('suggestion_available')::public.book_status
 FROM s_sugs s
