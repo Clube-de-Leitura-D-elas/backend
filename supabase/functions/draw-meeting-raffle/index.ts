@@ -5,6 +5,7 @@ import { requireMeetingRecordManager } from "../_shared/meetingRecord.ts";
 import {
   hasRaffleResult,
   loadRaffleCandidates,
+  narrowByHostRotation,
   pickEligible,
   raffleAlreadyRecorded,
   randomIndex,
@@ -45,6 +46,16 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const eligible = pickEligible(candidates, ids);
   if (eligible instanceof Response) return eligible;
 
-  const winner = eligible[randomIndex(eligible.length)];
+  // Rodízio de anfitriãs: só entre as marcadas que ele permite.
+  const pool = await narrowByHostRotation(
+    ctx,
+    meetingId,
+    meeting.groupId,
+    LOG_LABEL,
+    eligible,
+  );
+  if (pool instanceof Response) return pool;
+
+  const winner = pool[randomIndex(pool.length)];
   return Response.json(toResultJson(meetingId, winner, null));
 }));

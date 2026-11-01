@@ -4,6 +4,8 @@ Banco de dados e regras de acesso da plataforma do Clube de Leitura D'Elas.
 
 Consumido pelo app [`mobile`](https://github.com/Clube-de-Leitura-D-elas/mobile) e pelo painel [`web`](https://github.com/Clube-de-Leitura-D-elas/web).
 
+> Regras de código e de review (para pessoas, agentes de IA e o CodeRabbit): [`AGENTS.md`](AGENTS.md).
+
 ---
 
 ## 🧱 O que vive aqui

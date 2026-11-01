@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Revisor automático dos PRs. As regras do repositório ficam no AGENTS.md;
+# este arquivo só liga o bot e aponta para elas.
+language: pt-BR
+tone_instructions: >-
+  Revise como uma pessoa sênior do time: direta, em pt-BR, explicando o porquê e
+  sugerindo a correção. O time está aprendendo; aponte o que importa, sem nits de gosto.
+reviews:
+  profile: chill
+  auto_approvals:
+    enabled: true
+    allow_author_approval: false
+    max_merge_risk: moderate
+    overrides:
+      - paths:
+          - "supabase/migrations/**"
+        enabled: false
+  high_level_summary: true
+  poem: false
+  in_progress_fortune: false
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    base_branches:
+      - "^main$"
+  tools:
+    biome:
+      enabled: false
+    oxc:
+      enabled: false
+    sqlfluff:
+      enabled: false
+  path_instructions:
+    - path: "**/*"
+      instructions: >-
+        Use o AGENTS.md da raiz como critério de review: as seções "Regras" e
+        "Checklist de review" valem como regras do repositório. Uma regra quebrada é
+        achado, mesmo que o código funcione. As regras valem para o código novo ou
+        alterado no PR: não peça refactor de código legado que o PR não tocou.
+    - path: "supabase/migrations/**"
+      instructions: >-
+        Aplique a seção "Migrations" do AGENTS.md. Migration já mergeada nunca é
+        editada. Tabela nova precisa de GRANT só para service_role e ENABLE ROW LEVEL
+        SECURITY. NOT NULL e UNIQUE em tabela com dados precisam tratar as linhas
+        existentes; se a limpeza puder deixar duplicatas, peça a consulta de
+        pré-checagem para produção. Dado denormalizado precisa de garantia de
+        consistência no banco. Mudou o schema: o seed.sql precisa acompanhar.
+    - path: "supabase/functions/**"
+      instructions: >-
+        Aplique as seções "Edge Functions" e "Fotos e storage" do AGENTS.md. Confira a
+        ordem 405 → 400 → 401/403 → 404, erro de banco como 500 sem error.message cru,
+        rollback de escritas em várias etapas, validação repetida na etapa de
+        confirmação, path de foto sempre assinado e uso dos helpers de _shared.
+        Function nova precisa de deno.json e entrada no config.toml. Aponte função
+        exportada sem chamador.
+    - path: "supabase/seed.sql"
+      instructions: >-
+        O seed precisa continuar rodando com npx supabase db reset e acompanhar o
+        schema atual. Nada de dado pessoal real.
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - AGENTS.md
