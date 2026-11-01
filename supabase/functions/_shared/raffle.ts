@@ -117,6 +117,7 @@ export async function loadRaffleCandidates(
 
   const currentHostId = await findMeetingHostUserId(ctx, meetingId, logLabel);
   if (currentHostId instanceof Response) return currentHostId;
+
   const resolvePhotoUrl = await resolveProfilePhotoUrls(
     ctx,
     req,
@@ -130,7 +131,7 @@ export async function loadRaffleCandidates(
       const available = own.find((s) => !usedBooks.has(s.book_id));
       const isCurrentHost = row.user_id === currentHostId;
       const book = isCurrentHost ? undefined : available;
-       return {
+      return {
         userId: row.user_id,
         name: row.users.name,
         avatarUrl: resolvePhotoUrl(row.users.photos?.url),
@@ -149,21 +150,24 @@ export async function loadRaffleCandidates(
 
 /**
  * Rodízio de anfitriãs, aplicado só na escolha da vencedora: dentre as
- * participantes marcadas, quem já foi anfitriã só pode ser escolhida depois
- * que todas as outras integrantes ativas do grupo (presentes ou não) já
+ * participantes marcadas, quem já foi anfitriã só pode ser escolhida de novo
+ * depois que todas as outras integrantes ativas do grupo (presentes ou não)
  * tiverem sido anfitriãs depois dela. Quem nunca foi anfitriã não é limitada.
+ * O histórico conta só encontros já realizados e o encontro atual.
  *
- * Se nenhuma das marcadas puder ser escolhida, vale a exceção: a que está há
- * mais tempo sem hospedar. Nunca devolve uma lista vazia quando `picked` não
- * é vazia.
+ * Se todas as marcadas estiverem bloqueadas, vale a exceção: a que está há
+ * mais tempo sem hospedar. Se só restar quem hospedou por último, ela é
+ * escolhida mesmo assim, porque quem está presente tem prioridade. Nunca
+ * devolve uma lista vazia quando `picked` não é vazia.
  */
 export async function narrowByHostRotation(
   ctx: Ctx,
+  meetingId: string,
   groupId: string,
   logLabel: string,
   picked: RaffleCandidate[],
 ): Promise<RaffleCandidate[] | Response> {
-  const hosts = await findGroupHosts(ctx, groupId, logLabel);
+  const hosts = await findGroupHosts(ctx, meetingId, groupId, logLabel);
   if (hosts instanceof Response) return hosts;
 
   const links = await findGroupLinks(ctx, groupId, logLabel);
@@ -222,28 +226,21 @@ async function findMeetingHostUserId(
   meetingId: string,
   logLabel: string,
 ): Promise<string | null | Response> {
-  const { data: meeting, error } = await ctx.supabaseAdmin
+  const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
-    .select("host_id")
+    .select("host:group_users!meetings_host_id_fkey(user_id)")
     .eq("id", meetingId)
     .maybeSingle();
   if (error) return dbError(logLabel, "meeting host", error);
-
-  const hostLinkId = (meeting as { host_id: string } | null)?.host_id;
-  if (!hostLinkId) return null;
-
-  const { data: link, error: linkError } = await ctx.supabaseAdmin
-    .from("group_users")
-    .select("user_id")
-    .eq("id", hostLinkId)
-    .maybeSingle();
-  if (linkError) return dbError(logLabel, "meeting host link", linkError);
-  return (link as { user_id: string } | null)?.user_id ?? null;
+  return (data as { host: { user_id: string } | null } | null)?.host
+    ?.user_id ?? null;
 }
 
-// Encontros com data do grupo, para saber quem foi anfitriã e quando.
+// Encontros que já aconteceram (ENDED/CONCLUDED) mais o encontro atual, para
+// saber quem foi anfitriã e quando. Encontros futuros ainda não contam.
 async function findGroupHosts(
   ctx: Ctx,
+  meetingId: string,
   groupId: string,
   logLabel: string,
 ): Promise<HostRow[] | Response> {
@@ -251,7 +248,8 @@ async function findGroupHosts(
     .from("meetings")
     .select("host_id, date")
     .eq("group_id", groupId)
-    .not("date", "is", null);
+    .not("date", "is", null)
+    .or(`status.in.(ENDED,CONCLUDED),id.eq.${meetingId}`);
   if (error) return dbError(logLabel, "meeting hosts", error);
   return (data ?? []) as HostRow[];
 }
@@ -325,8 +323,8 @@ function blockedFromLastHosted(
 
 /**
  * Exceção do rodízio: quando todas as candidatas estão bloqueadas, libera a
- * que está há mais tempo sem hospedar. A anfitriã mais recente do grupo nunca
- * é liberada.
+ * que está há mais tempo sem hospedar, sem considerar a anfitriã mais recente
+ * do grupo. Se só ela sobrar, quem chama decide (ver `narrowByHostRotation`).
  */
 function findRotationFallbackUserIds(
   blockedCandidateIds: string[],
