@@ -202,8 +202,8 @@ async function findGroupUsedBooks(
 ): Promise<Set<string> | Response> {
   const { data: drawn, error: drawnError } = await ctx.supabaseAdmin
     .from("book_suggestions")
-    .select("book_id, group_users!inner(group_id)")
-    .eq("group_users.group_id", groupId)
+    .select("book_id")
+    .eq("group_id", groupId)
     .neq("book_status", "AVAILABLE");
   if (drawnError) return dbError(logLabel, "drawn books", drawnError);
 
