@@ -93,3 +93,14 @@ ALTER TABLE public.book_suggestions
   ADD CONSTRAINT book_suggestions_group_id_fkey
     FOREIGN KEY (group_id) REFERENCES public.groups(id),
   ADD CONSTRAINT book_suggestions_group_id_book_id_key UNIQUE (group_id, book_id);
+
+-- O grupo agora aparece em group_id e via group_user_id → group_users.group_id.
+-- A FK composta garante que os dois batem; sem ela, um group_id errado furaria
+-- a unicidade por grupo.
+ALTER TABLE public.group_users
+  ADD CONSTRAINT group_users_id_group_id_key UNIQUE (id, group_id);
+
+ALTER TABLE public.book_suggestions
+  ADD CONSTRAINT book_suggestions_group_user_group_fkey
+    FOREIGN KEY (group_user_id, group_id)
+    REFERENCES public.group_users(id, group_id);
