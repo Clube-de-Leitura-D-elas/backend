@@ -9,7 +9,6 @@ import { isUuid } from "../_shared/uuid.ts";
 const LOG_LABEL = "get-book-details";
 const DEFAULT_REVIEWS_PAGE_SIZE = 10;
 const MAX_REVIEWS_PAGE_SIZE = 50;
-// Mesmo limite do max_rows do PostgREST (config.toml).
 const RATINGS_BATCH_SIZE = 1000;
 
 type Ctx = SupabaseContext<Database>;
@@ -39,6 +38,10 @@ type ReviewRow = MyReviewRow & {
 // avaliações, estado da leitora (estante e avaliação dela) e as avaliações das
 // outras leitoras, paginadas. Query string: bookId, reviewsPage, reviewsPageSize.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
+  if (req.method !== "GET") {
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
+  }
+
   const url = new URL(req.url);
   const bookId = url.searchParams.get("bookId");
   if (!isUuid(bookId)) {
@@ -162,13 +165,15 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   });
 }));
 
-// Todas as notas do livro, em lotes: uma consulta só pararia no max_rows.
+// Todas as notas do livro, em lotes: uma consulta só pararia no max_rows. O
+// max_rows do projeto hospedado pode ser menor que o lote, então só um lote
+// vazio indica o fim.
 async function loadRatings(
   ctx: Ctx,
   bookId: string,
 ): Promise<number[] | Response> {
   const ratings: number[] = [];
-  for (let offset = 0;; offset += RATINGS_BATCH_SIZE) {
+  for (let offset = 0;;) {
     const { data, error } = await ctx.supabaseAdmin
       .from("book_reviews")
       .select("rating")
@@ -179,8 +184,9 @@ async function loadRatings(
     if (error) return dbError("ratings", error);
 
     const batch = (data ?? []) as { rating: number }[];
+    if (batch.length === 0) return ratings;
     ratings.push(...batch.map((row) => row.rating));
-    if (batch.length < RATINGS_BATCH_SIZE) return ratings;
+    offset += batch.length;
   }
 }
 
