@@ -29,7 +29,11 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const profile = data as unknown as ProfileRow | null;
-  const photoPath = profile?.photos?.url ?? null;
+  if (!profile) {
+    return Response.json({ error: "User profile not found" }, { status: 404 });
+  }
+
+  const photoPath = profile.photos?.url ?? null;
 
   const resolvePhotoUrl = await resolveProfilePhotoUrls(ctx, req, [photoPath]);
   if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
@@ -37,7 +41,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   return Response.json({
     success: true,
     profile: {
-      name: profile?.name ?? null,
+      name: profile.name,
       photoUrl: resolvePhotoUrl(photoPath),
     },
   });
