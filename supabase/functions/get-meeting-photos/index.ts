@@ -16,6 +16,7 @@ import {
 
 type MeetingPhotoRow = {
   is_cover: boolean;
+  description: string | null;
   photos: { id: string; url: string; created_at: string } | null;
 };
 
@@ -50,7 +51,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { data, error } = await ctx.supabaseAdmin
     .from("meeting_photos")
-    .select("is_cover, photos!inner(id, url, created_at)")
+    .select("is_cover, description, photos!inner(id, url, created_at)")
     .eq("meeting_id", meetingId);
 
   if (error) {
@@ -65,14 +66,24 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const photos: MeetingPhoto[] = ((data ?? []) as unknown as MeetingPhotoRow[])
     .flatMap((row) =>
-      row.photos ? [{ ...row.photos, is_cover: row.is_cover }] : []
+      row.photos
+        ? [{
+            ...row.photos,
+            is_cover: row.is_cover,
+            caption: row.description,
+          }]
+        : []
     )
     .sort((a, b) =>
       Number(b.is_cover) - Number(a.is_cover) ||
       Date.parse(a.created_at) - Date.parse(b.created_at) ||
       a.id.localeCompare(b.id)
     )
-    .map((photo) => ({ id: photo.id, url: photo.url }));
+    .map((photo) => ({
+      id: photo.id,
+      url: photo.url,
+      caption: photo.caption,
+    }));
 
   const signed = await signMeetingPhotos(ctx, req, meetingId, photos);
   if (signed instanceof Response) return signed;
