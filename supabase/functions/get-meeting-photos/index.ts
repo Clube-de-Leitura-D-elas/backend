@@ -65,14 +65,16 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const photos: MeetingPhoto[] = ((data ?? []) as unknown as MeetingPhotoRow[])
-    .flatMap((row) =>
-      row.photos
-        ? [{
-            ...row.photos,
-            is_cover: row.is_cover,
-            caption: row.description,
-          }]
-        : []
+    .flatMap(
+      (row) => row.photos
+        ? [
+            {
+              ...row.photos,
+              is_cover: row.is_cover,
+              caption: row.description,
+            },
+          ]
+        : [],
     )
     .sort((a, b) =>
       Number(b.is_cover) - Number(a.is_cover) ||

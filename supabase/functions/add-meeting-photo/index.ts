@@ -172,7 +172,7 @@ async function readPhotoRequest(
     caption !== undefined &&
     caption !== null &&
     (typeof caption !== "string" ||
-      caption.trim().length > MAX_CAPTION_LENGTH)
+      Array.from(caption.trim()).length > MAX_CAPTION_LENGTH)
   ) {
     return badRequest(
       `"caption" must be a string with at most ${MAX_CAPTION_LENGTH} characters`,
