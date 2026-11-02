@@ -625,3 +625,8 @@ import_map = "./functions/get-participant-presence-history/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/set-book-reading-status/deno.json"
+
+[functions.get-book-details]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-book-details/deno.json"
