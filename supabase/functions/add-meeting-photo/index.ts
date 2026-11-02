@@ -21,6 +21,7 @@ import {
 import { isUuid } from "../_shared/uuid.ts";
 
 const MAX_PHOTOS_PER_MEETING = 50;
+const MAX_CAPTION_LENGTH = 500;
 const PHOTO_LIMIT_ERRCODE = "P0050";
 const PHOTO_STATUSES = ["ENDED", "CONCLUDED"];
 
@@ -32,6 +33,7 @@ type PhotoRequest = {
   contentType: string;
   extension: string;
   encoded: string;
+  caption: string | null;
 };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
@@ -165,12 +167,27 @@ async function readPhotoRequest(
     return photoTooLarge();
   }
 
+  const caption = body?.caption;
+  if (
+    caption !== undefined &&
+    caption !== null &&
+    (typeof caption !== "string" ||
+      Array.from(caption.trim()).length > MAX_CAPTION_LENGTH)
+  ) {
+    return badRequest(
+      `"caption" must be a string with at most ${MAX_CAPTION_LENGTH} characters`,
+    );
+  }
+
   return {
     meetingId,
     photoId: photoId.toLowerCase(),
     contentType: contentType as string,
     extension,
     encoded,
+    caption: typeof caption === "string" && caption.trim().length > 0
+      ? caption.trim()
+      : null,
   };
 }
 
@@ -181,7 +198,7 @@ async function findExistingPhoto(
 ): Promise<Response | null> {
   const { data, error } = await ctx.supabaseAdmin
     .from("photos")
-    .select("id, url, meeting_photos(meeting_id)")
+    .select("id, url, meeting_photos(meeting_id, description)")
     .eq("id", request.photoId)
     .maybeSingle();
 
@@ -191,7 +208,10 @@ async function findExistingPhoto(
   }
   if (!data) return null;
 
-  const link = data.meeting_photos as unknown as { meeting_id: string } | null;
+  const link = data.meeting_photos as unknown as {
+    meeting_id: string;
+    description: string | null;
+  } | null;
   if (link?.meeting_id !== request.meetingId) {
     return Response.json({ error: '"photo_id" already in use' }, {
       status: 422,
@@ -205,6 +225,7 @@ async function findExistingPhoto(
     data.id,
     data.url,
     200,
+    link?.description,
   );
 }
 
@@ -258,6 +279,7 @@ async function storePhoto(
       request.photoId,
       objectPath,
       201,
+      request.caption,
     );
   }
 
@@ -296,6 +318,7 @@ async function insertPhotoRows(
       meeting_id: request.meetingId,
       is_cover: false,
       is_sketch: false,
+      description: request.caption,
     });
   if (!linkError) return null;
 
@@ -315,8 +338,13 @@ async function signedPhotoResponse(
   id: string,
   url: string,
   status: number,
+  caption: string | null = null,
 ): Promise<Response> {
-  const signed = await signMeetingPhotos(ctx, req, meetingId, [{ id, url }]);
+  const signed = await signMeetingPhotos(ctx, req, meetingId, [{
+    id,
+    url,
+    caption,
+  }]);
   if (signed instanceof Response) return signed;
   if (signed.length === 0) return serverError();
 
