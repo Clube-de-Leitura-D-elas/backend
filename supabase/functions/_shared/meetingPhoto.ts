@@ -6,7 +6,11 @@ export const MEETING_PHOTOS_BUCKET = "meeting-photos";
 
 const ABSOLUTE_URL_REGEX = /^https?:\/\//i;
 
-export type MeetingPhoto = { id: string; url: string };
+export type MeetingPhoto = {
+  id: string;
+  url: string;
+  caption?: string | null;
+};
 
 export async function signMeetingPhotos(
   ctx: SupabaseContext<Database>,
@@ -53,6 +57,6 @@ export async function signMeetingPhotos(
       console.warn("meeting photo without signed url", photo.id);
       return [];
     }
-    return [{ id: photo.id, url: signedUrl }];
+    return [{ ...photo, url: signedUrl }];
   });
 }
