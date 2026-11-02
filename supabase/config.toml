@@ -630,3 +630,8 @@ import_map = "./functions/set-book-reading-status/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/get-book-details/deno.json"
+
+[functions.upsert-book-review]
+enabled = true
+verify_jwt = true
+import_map = "./functions/upsert-book-review/deno.json"
