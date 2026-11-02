@@ -6,7 +6,7 @@ export const ORDER_BY: Record<string, { column: string; ascending: boolean }> = 
   newest: { column: "created_at", ascending: false },
 };
 
-const toPositiveInt = (value: string | null, fallback: number) => {
+export const toPositiveInt = (value: string | null, fallback: number) => {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
