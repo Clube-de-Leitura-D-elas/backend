@@ -25,10 +25,11 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Fixed on purpose: `latest` jumped to v3 and broke the deploy.
+          version: 2.122.1
 
       - name: Push Database Migrations
-        run: supabase db push --include-all --project-ref "$SUPABASE_PROJECT_ID" --password "$SUPABASE_DB_PASSWORD"
+        run: supabase db push --include-all --yes --project-ref "$SUPABASE_PROJECT_ID" --password "$SUPABASE_DB_PASSWORD"
 
       - name: Deploy Edge Functions
-        run: supabase functions deploy --project-ref $SUPABASE_PROJECT_ID
+        run: supabase functions deploy --yes --project-ref "$SUPABASE_PROJECT_ID"
