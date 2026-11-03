@@ -371,9 +371,11 @@ export function toResultJson(
   meetingId: string,
   candidate: RaffleCandidate,
   drawnAt: string | null,
+  nextMeetingId: string | null = null,
 ) {
   return {
     meeting_id: meetingId,
+    next_meeting_id: nextMeetingId,
     winner_id: candidate.userId,
     winner_name: candidate.name,
     winner_avatar_url: candidate.avatarUrl,

@@ -5,6 +5,7 @@ import {
   isGroupCoordinatorOrMeetingHost,
   requireGroupMemberProfile,
 } from "../_shared/group.ts";
+import { oneLine } from "../_shared/log.ts";
 import { readMeetingIdParam } from "../_shared/meeting.ts";
 import { RECORD_STATUSES } from "../_shared/meetingRecord.ts";
 import {
@@ -34,17 +35,16 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
-      "id, group_id, host_id, status, date, location_id, books!inner(name, author), groups!inner(number), locations(name), meeting_photos(is_sketch), meeting_raffles(meeting_id)",
+      "id, group_id, host_id, status, date, location_id, books!inner(name, author), groups!inner(number), locations(name), meeting_photos(is_sketch), meeting_raffles!meeting_raffles_meeting_id_fkey(meeting_id)",
     )
     .eq("id", meetingId)
     .maybeSingle();
 
   if (error) {
-    console.error(
-      "get-meeting-tasks error",
-      error.message.replace(/[\r\n]/g, " "),
-    );
-    return Response.json({ error: error.message }, { status: 500 });
+    console.error("get-meeting-tasks error", oneLine(error.message));
+    return Response.json({ error: "Unable to load meeting tasks" }, {
+      status: 500,
+    });
   }
 
   if (!data) {
@@ -90,4 +90,3 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     },
   });
 }));
-
