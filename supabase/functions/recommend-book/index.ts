@@ -46,16 +46,6 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "User profile not found" }, { status: 404 });
   }
 
-  const { data: book, error: bookError } = await ctx.supabaseAdmin
-    .from("books")
-    .select("id")
-    .eq("id", bookId)
-    .maybeSingle();
-  if (bookError) return dbError("book", bookError);
-  if (!book) {
-    return Response.json({ error: "book_not_found" }, { status: 404 });
-  }
-
   const { data: membership, error: membershipError } = await ctx.supabaseAdmin
     .from("group_users")
     .select("id, groups!inner(id)")
@@ -68,6 +58,16 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (membershipError) return dbError("membership", membershipError);
   if (!membership) {
     return Response.json({ error: "not_group_member" }, { status: 403 });
+  }
+
+  const { data: book, error: bookError } = await ctx.supabaseAdmin
+    .from("books")
+    .select("id")
+    .eq("id", bookId)
+    .maybeSingle();
+  if (bookError) return dbError("book", bookError);
+  if (!book) {
+    return Response.json({ error: "book_not_found" }, { status: 404 });
   }
 
   const { data, error } = await ctx.supabaseAdmin

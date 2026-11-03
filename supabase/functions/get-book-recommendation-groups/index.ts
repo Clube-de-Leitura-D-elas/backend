@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { oneLine } from "../_shared/log.ts";
+import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
 const LOG_LABEL = "get-book-recommendation-groups";
@@ -74,17 +75,23 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   );
   const uniqueGroups = new Map<string, GroupRow>();
   for (const row of rows) uniqueGroups.set(row.group_id, row.groups);
+  const groups = [...uniqueGroups.entries()]
+    .sort(([, left], [, right]) => left.number - right.number);
+  const resolvePhotoUrl = await resolveProfilePhotoUrls(
+    ctx,
+    req,
+    groups.map(([, group]) => group.photos?.url),
+  );
+  if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
 
   return Response.json({
-    items: [...uniqueGroups.entries()]
-      .sort(([, left], [, right]) => left.number - right.number)
-      .map(([groupId, group]) => ({
-        group_id: groupId,
-        number: group.number,
-        name: `Grupo ${group.number}`,
-        photo_url: group.photos?.url ?? null,
-        already_recommended: recommendedGroupIds.has(groupId),
-      })),
+    items: groups.map(([groupId, group]) => ({
+      group_id: groupId,
+      number: group.number,
+      name: `Grupo ${group.number}`,
+      photo_url: resolvePhotoUrl(group.photos?.url),
+      already_recommended: recommendedGroupIds.has(groupId),
+    })),
   });
 }));
 
