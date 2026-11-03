@@ -13,17 +13,16 @@ ALTER TABLE public.meeting_raffles
   ADD COLUMN next_meeting_id uuid;
 
 UPDATE public.meeting_raffles mr
-SET next_meeting_id = existing.id
-FROM public.meetings current_meeting,
-     LATERAL (
-       SELECT m.id
-       FROM public.meetings m
-       WHERE m.group_id = current_meeting.group_id
-         AND m.book_id = mr.book_id
-         AND m.id <> mr.meeting_id
-       ORDER BY m.date NULLS FIRST, m.id
-       LIMIT 1
-     ) existing
+SET next_meeting_id = (
+  SELECT m.id
+  FROM public.meetings m
+  WHERE m.group_id = current_meeting.group_id
+    AND m.book_id = mr.book_id
+    AND m.id <> mr.meeting_id
+  ORDER BY m.date NULLS FIRST, m.id
+  LIMIT 1
+)
+FROM public.meetings current_meeting
 WHERE current_meeting.id = mr.meeting_id
   AND mr.next_meeting_id IS NULL;
 
