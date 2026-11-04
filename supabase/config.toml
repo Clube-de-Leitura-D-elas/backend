@@ -469,6 +469,11 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/get-my-groups/deno.json"
 
+[functions.get-my-profile-summary]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-my-profile-summary/deno.json"
+
 [functions.get-group-next-event]
 enabled = true
 verify_jwt = true
