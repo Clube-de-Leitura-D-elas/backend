@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
+import { oneLine } from "../_shared/log.ts";
 import { countDoneTasks, TASKS_TOTAL } from "../_shared/meetingTasks.ts";
 
 type MembershipRow = {
@@ -19,7 +20,7 @@ type MeetingRow = {
   group_id: string;
   host_id: string;
   status: string;
-  date: string;
+  date: string | null;
   location_id: string | null;
   locations: { name: string; address: string } | null;
   books: { name: string };
@@ -41,8 +42,10 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     .maybeSingle();
 
   if (profileError) {
-    console.error("get-my-groups profile error", profileError.message);
-    return Response.json({ error: profileError.message }, { status: 500 });
+    console.error("get-my-groups profile error", oneLine(profileError.message));
+    return Response.json({ error: "Unable to load user groups" }, {
+      status: 500,
+    });
   }
 
   if (!profile) {
@@ -59,8 +62,10 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     .order("group_id");
 
   if (error) {
-    console.error("get-my-groups memberships error", error.message);
-    return Response.json({ error: error.message }, { status: 500 });
+    console.error("get-my-groups memberships error", oneLine(error.message));
+    return Response.json({ error: "Unable to load user groups" }, {
+      status: 500,
+    });
   }
 
   const memberships = (data ?? []) as unknown as MembershipRow[];
@@ -85,9 +90,11 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
   if (groupUsersError) {
     console.error(
       "get-my-groups participant count error",
-      groupUsersError.message,
+      oneLine(groupUsersError.message),
     );
-    return Response.json({ error: groupUsersError.message }, { status: 500 });
+    return Response.json({ error: "Unable to load user groups" }, {
+      status: 500,
+    });
   }
 
   const { data: meetingData, error: meetingsError } = await ctx.supabaseAdmin
@@ -97,25 +104,38 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     )
     .in("group_id", groupIds)
     .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS", "ENDED"])
-    .not("date", "is", null)
-    .order("date", { ascending: true });
+    .order("date", { ascending: true })
+    .order("id", { ascending: true });
 
   if (meetingsError) {
     console.error(
       "get-my-groups next meetings error",
-      meetingsError.message.replace(/[\r\n]/g, " "),
+      oneLine(meetingsError.message),
     );
-    return Response.json({ error: meetingsError.message }, { status: 500 });
+    return Response.json({ error: "Unable to load user groups" }, {
+      status: 500,
+    });
   }
 
-  const nextMeetingByGroupId = new Map<string, MeetingRow>();
+  const upcomingMeetingByGroupId = new Map<string, MeetingRow>();
+  const pendingMeetingsByGroupId = new Map<string, MeetingRow[]>();
   const now = Date.now();
   for (const meeting of (meetingData ?? []) as unknown as MeetingRow[]) {
-    if (nextMeetingByGroupId.has(meeting.group_id)) continue;
-
     const membership = membershipByGroupId.get(meeting.group_id);
-    if (isUpcoming(meeting, now) || canManageTasks(membership, meeting)) {
-      nextMeetingByGroupId.set(meeting.group_id, meeting);
+    if (
+      !upcomingMeetingByGroupId.has(meeting.group_id) &&
+      isUpcoming(meeting, now)
+    ) {
+      upcomingMeetingByGroupId.set(meeting.group_id, meeting);
+    }
+
+    if (
+      canManageTasks(membership, meeting) &&
+      countDoneTasks(meeting, meeting.meeting_photos) < TASKS_TOTAL
+    ) {
+      const pending = pendingMeetingsByGroupId.get(meeting.group_id);
+      if (pending) pending.push(meeting);
+      else pendingMeetingsByGroupId.set(meeting.group_id, [meeting]);
     }
   }
 
@@ -130,33 +150,23 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
   return Response.json({
     groups: groups.map((group) => {
       const city = group.cities;
-      const meeting = nextMeetingByGroupId.get(group.id);
       const membership = membershipByGroupId.get(group.id);
-      const myAttendance = meeting?.meeting_users.find(
-        (attendance) => attendance.user_id === profile.id,
-      );
+      const pendingMeetings = pendingMeetingsByGroupId.get(group.id) ?? [];
+      const upcomingMeeting = upcomingMeetingByGroupId.get(group.id);
       return {
         id: group.id,
         number: group.number,
         participant_count: countsByGroupId.get(group.id) ?? 0,
         city_state: city ? `${city.name}, ${city.uf}` : "",
         photo_url: group.photos?.url ?? null,
-        next_meeting: meeting
-          ? {
-            id: meeting.id,
-            status: meeting.status,
-            host_name: meeting.host.users.name,
-            book_title: meeting.books.name,
-            date: meeting.date,
-            location: meeting.locations?.name ?? "",
-            invitation_status: myAttendance?.invitation_status ?? "PENDING",
-            can_manage_tasks: canManageTasks(membership, meeting),
-            tasks_done: countDoneTasks(meeting, meeting.meeting_photos),
-            tasks_total: TASKS_TOTAL,
-          }
+        next_meeting: upcomingMeeting
+          ? toMeetingSummary(upcomingMeeting, membership, profile.id)
           : null,
-        has_pending_response: meeting && meeting.status !== "ENDED"
-          ? !meeting.meeting_users.some(
+        pending_meetings: pendingMeetings.map((pendingMeeting) =>
+          toMeetingSummary(pendingMeeting, membership, profile.id)
+        ),
+        has_pending_response: upcomingMeeting
+          ? !upcomingMeeting.meeting_users.some(
             (attendance) => attendance.user_id === profile.id,
           )
           : false,
@@ -164,6 +174,28 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     }),
   });
 }));
+
+function toMeetingSummary(
+  meeting: MeetingRow,
+  membership: MembershipRow | undefined,
+  profileId: string,
+) {
+  const myAttendance = meeting.meeting_users.find(
+    (attendance) => attendance.user_id === profileId,
+  );
+  return {
+    id: meeting.id,
+    status: meeting.status,
+    host_name: meeting.host.users.name,
+    book_title: meeting.books.name,
+    date: meeting.date ?? "",
+    location: meeting.locations?.name ?? "",
+    invitation_status: myAttendance?.invitation_status ?? "PENDING",
+    can_manage_tasks: canManageTasks(membership, meeting),
+    tasks_done: countDoneTasks(meeting, meeting.meeting_photos),
+    tasks_total: TASKS_TOTAL,
+  };
+}
 
 function canManageTasks(
   membership: MembershipRow | undefined,
@@ -176,5 +208,12 @@ function canManageTasks(
 
 function isUpcoming(meeting: MeetingRow, now: number): boolean {
   if (meeting.status === "IN_PROGRESS") return true;
-  return meeting.status !== "ENDED" && Date.parse(meeting.date) >= now;
+  if (
+    meeting.status === "ENDED" ||
+    meeting.status === "CREATED" ||
+    !meeting.date
+  ) {
+    return false;
+  }
+  return Date.parse(meeting.date) >= now;
 }
