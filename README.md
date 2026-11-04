@@ -68,11 +68,22 @@ Algumas funções dependem de chaves externas para funcionar localmente. Crie o 
 
 ```env
 GOOGLE_PLACES_API_KEY=<sua chave da Google Places API>
+GOOGLE_BOOKS_API_KEY=<sua chave da Google Books API>
 ```
 
 > A `GOOGLE_PLACES_API_KEY` é usada pelas funções `search-places` e `update-meeting` para
 > buscar e resolver endereços via Google Places API. Sem ela, essas funções retornam erro 500
 > (`place search is not configured`). As demais funções continuam funcionando normalmente.
+>
+> A `GOOGLE_BOOKS_API_KEY` é usada pelo helper `_shared/googleBooks.ts` (busca e cadastro de
+> livros a partir do Google Books). **Ela é obrigatória**: sem chave, o Google atribui a chamada a
+> um projeto anônimo com cota zero, e a busca devolve o erro tratado `quota_exceeded`.
+>
+> Para desenvolver, crie uma chave própria (gratuita, não exige faturamento):
+> 1. No [Google Cloud Console](https://console.cloud.google.com/), crie ou selecione um projeto.
+> 2. Em **APIs e serviços → Biblioteca**, ative a **Books API**.
+> 3. Em **Credenciais → Criar credenciais → Chave de API**, restrinja a chave à **Books API**.
+> 4. Coloque a chave no `supabase/functions/.env.local`. Nunca commite a chave.
 
 ```bash
 # Sobe as edge functions com as variáveis de ambiente locais
@@ -113,6 +124,7 @@ Nenhuma chave do Supabase é commitada. As credenciais ficam no **GitHub Secrets
 |---|---|---|
 | Credenciais Supabase | GitHub Secrets | `.env` do app mobile |
 | `GOOGLE_PLACES_API_KEY` | `npx supabase secrets set GOOGLE_PLACES_API_KEY=...` | `supabase/functions/.env.local` |
+| `GOOGLE_BOOKS_API_KEY` | `npx supabase secrets set GOOGLE_BOOKS_API_KEY=...` | `supabase/functions/.env.local` |
 
 ---
 
