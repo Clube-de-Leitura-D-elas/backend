@@ -22,9 +22,6 @@ function isAction(value: unknown): value is Action {
 // POST { groupId, participantId, action: "promote" | "demote" | "remove" }
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "POST") return Response.json({ error: "expected POST" }, { status: 405 });
-  const denied = await requireRole(ctx, ["MANAGER", "FOUNDER"], "management");
-  if (denied) return denied;
-
   let body: Record<string, unknown>;
   try {
     const input: unknown = await req.json();
@@ -38,6 +35,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (!isUuid(groupId) || !isUuid(participantId) || !isAction(action)) {
     return Response.json({ error: "invalid groupId, participantId or action" }, { status: 400 });
   }
+
+  const denied = await requireRole(ctx, ["MANAGER", "FOUNDER"], "management");
+  if (denied) return denied;
 
   const { data: membership, error: lookupError } = await ctx.supabaseAdmin
     .from("group_users")
@@ -57,15 +57,16 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "participant is not a coordinator" }, { status: 409 });
   }
 
-  // O grupo não pode perder a última coordenadora, nem rebaixada nem removida.
+  // O grupo não pode perder a última coordenadora, nem rebaixada nem removida:
+  // confere se sobra outra coordenadora ativa além desta.
   const losesCoordinator = membership.is_coordinator && action !== "promote";
   if (losesCoordinator) {
-    const { count, error: countError } = await countActiveCoordinators(ctx, groupId);
+    const { count, error: countError } = await countActiveCoordinators(ctx, groupId, participantId);
     if (countError) {
       console.error("update-group-participant count", oneLine(countError.message));
       return Response.json({ error: "unable to update membership" }, { status: 500 });
     }
-    if ((count ?? 0) <= 1) return lastCoordinatorResponse();
+    if ((count ?? 0) === 0) return lastCoordinatorResponse();
   }
 
   const { data: updated, error } = await ctx.supabaseAdmin
@@ -83,14 +84,18 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (!updated) return Response.json({ error: "membership changed; refresh and retry" }, { status: 409 });
 
   // Sem transação: duas coordenadoras saindo ao mesmo tempo passam juntas pela
-  // checagem acima. Se o grupo zerou, desfaz esta alteração.
+  // checagem acima (risco aceito, só gestoras usam o painel). Se o grupo zerou,
+  // desfaz esta alteração, mas só se a linha ainda estiver como a gravamos, para
+  // não sobrescrever uma mudança concorrente.
   if (losesCoordinator) {
     const { count, error: recountError } = await countActiveCoordinators(ctx, groupId);
     if (recountError || (count ?? 0) === 0) {
       const { error: revertError } = await ctx.supabaseAdmin
         .from("group_users")
         .update({ is_coordinator: true, registration_status: "ACTIVE" })
-        .eq("id", membership.id);
+        .eq("id", membership.id)
+        .eq("is_coordinator", updated.is_coordinator)
+        .eq("registration_status", updated.registration_status);
       if (revertError) {
         console.error("update-group-participant revert", oneLine(revertError.message));
         return Response.json({ error: "unable to update membership" }, { status: 500 });
@@ -106,13 +111,17 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   return Response.json({ success: true, is_coordinator: updated.is_coordinator, registration_status: updated.registration_status });
 }));
 
-function countActiveCoordinators(ctx: SupabaseContext<Database>, groupId: string) {
-  return ctx.supabaseAdmin
+// Mesmo critério de "coordenadora ativa" do get-group-details-web: vínculo
+// ACTIVE e conta ativa. `excludeUserId` tira a própria participante da conta.
+function countActiveCoordinators(ctx: SupabaseContext<Database>, groupId: string, excludeUserId?: string) {
+  const query = ctx.supabaseAdmin
     .from("group_users")
-    .select("id", { count: "exact", head: true })
+    .select("id, users!inner(is_active)", { count: "exact", head: true })
     .eq("group_id", groupId)
     .eq("is_coordinator", true)
-    .eq("registration_status", "ACTIVE");
+    .eq("registration_status", "ACTIVE")
+    .eq("users.is_active", true);
+  return excludeUserId ? query.neq("user_id", excludeUserId) : query;
 }
 
 function lastCoordinatorResponse() {
