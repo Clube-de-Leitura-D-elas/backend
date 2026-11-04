@@ -12,43 +12,47 @@
 ALTER TABLE public.meeting_raffles
   ADD COLUMN next_meeting_id uuid;
 
-UPDATE public.meeting_raffles mr
-SET next_meeting_id = (
-  SELECT m.id
-  FROM public.meetings m
-  WHERE m.group_id = current_meeting.group_id
-    AND m.book_id = mr.book_id
-    AND m.id <> mr.meeting_id
-  ORDER BY m.date NULLS FIRST, m.id
-  LIMIT 1
-)
-FROM public.meetings current_meeting
-WHERE current_meeting.id = mr.meeting_id
-  AND mr.next_meeting_id IS NULL;
+DO $$
+DECLARE
+  r RECORD;
+  v_next_meeting_id uuid;
+BEGIN
+  FOR r IN
+    SELECT mr.meeting_id AS raffled_meeting_id,
+           m.group_id,
+           bs.group_user_id AS host_id,
+           mr.book_id
+    FROM public.meeting_raffles mr
+    JOIN public.meetings m ON m.id = mr.meeting_id
+    JOIN public.book_suggestions bs ON bs.id = mr.book_suggestion_id
+    WHERE mr.next_meeting_id IS NULL
+    ORDER BY mr.drawn_at, mr.meeting_id
+  LOOP
+    SELECT existing.id INTO v_next_meeting_id
+    FROM public.meetings existing
+    WHERE existing.group_id = r.group_id
+      AND existing.book_id = r.book_id
+      AND existing.id <> r.raffled_meeting_id
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.meeting_raffles other
+        WHERE other.next_meeting_id = existing.id
+      )
+    ORDER BY existing.date NULLS FIRST, existing.id
+    LIMIT 1;
 
-WITH missing AS (
-  SELECT mr.meeting_id AS raffled_meeting_id,
-         m.group_id,
-         bs.group_user_id AS host_id,
-         mr.book_id
-  FROM public.meeting_raffles mr
-  JOIN public.meetings m ON m.id = mr.meeting_id
-  JOIN public.book_suggestions bs ON bs.id = mr.book_suggestion_id
-  WHERE mr.next_meeting_id IS NULL
-),
-inserted AS (
-  INSERT INTO public.meetings (group_id, host_id, book_id, status)
-  SELECT group_id, host_id, book_id, 'CREATED'
-  FROM missing
-  RETURNING id, group_id, book_id
-)
-UPDATE public.meeting_raffles mr
-SET next_meeting_id = inserted.id
-FROM public.meetings m, inserted
-WHERE m.id = mr.meeting_id
-  AND inserted.group_id = m.group_id
-  AND inserted.book_id = mr.book_id
-  AND mr.next_meeting_id IS NULL;
+    IF v_next_meeting_id IS NULL THEN
+      INSERT INTO public.meetings (group_id, host_id, book_id, status)
+      VALUES (r.group_id, r.host_id, r.book_id, 'CREATED')
+      RETURNING id INTO v_next_meeting_id;
+    END IF;
+
+    UPDATE public.meeting_raffles
+    SET next_meeting_id = v_next_meeting_id
+    WHERE meeting_id = r.raffled_meeting_id;
+  END LOOP;
+END;
+$$;
 
 ALTER TABLE public.meeting_raffles
   ALTER COLUMN next_meeting_id SET NOT NULL,

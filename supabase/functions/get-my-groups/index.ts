@@ -153,15 +153,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
       const membership = membershipByGroupId.get(group.id);
       const pendingMeetings = pendingMeetingsByGroupId.get(group.id) ?? [];
       const upcomingMeeting = upcomingMeetingByGroupId.get(group.id);
-      const meeting = upcomingMeeting ?? pendingMeetings[0];
       return {
         id: group.id,
         number: group.number,
         participant_count: countsByGroupId.get(group.id) ?? 0,
         city_state: city ? `${city.name}, ${city.uf}` : "",
         photo_url: group.photos?.url ?? null,
-        next_meeting: meeting
-          ? toMeetingSummary(meeting, membership, profile.id)
+        next_meeting: upcomingMeeting
+          ? toMeetingSummary(upcomingMeeting, membership, profile.id)
           : null,
         pending_meetings: pendingMeetings.map((pendingMeeting) =>
           toMeetingSummary(pendingMeeting, membership, profile.id)
