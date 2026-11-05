@@ -111,8 +111,11 @@ function errorCodeFor(status: number, body: string): GoogleBooksErrorCode {
   return "unavailable";
 }
 
+/** Força https e tira o efeito de página dobrada (`edge=curl`) da capa. */
 function toHttps(url: string | undefined): string | null {
-  return url ? url.replace(/^http:\/\//i, "https://") : null;
+  return url
+    ? url.replace(/^http:\/\//i, "https://").replace("&edge=curl", "")
+    : null;
 }
 
 /** A sinopse do Google vem com HTML (<p>, <br>, <b>): fica só o texto. */
