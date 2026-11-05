@@ -122,11 +122,23 @@ function errorCodeFor(status: number, body: string): GoogleBooksErrorCode {
   return "unavailable";
 }
 
-/** Força https e tira o efeito de página dobrada (`edge=curl`) da capa. */
+/** Força https e tira o efeito de página dobrada (`edge`) da capa. */
 function toHttps(url: string | undefined): string | null {
-  return url
-    ? url.replace(/^http:\/\//i, "https://").replace("&edge=curl", "")
-    : null;
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    parsed.protocol = "https:";
+    parsed.searchParams.delete("edge");
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+/** A sinopse do Google vem com HTML (<p>, <br>, <b>): fica só o texto. */
+function fromCodePoint(code: number, original: string): string {
+  return Number.isInteger(code) && code >= 0 && code <= 0x10ffff
+    ? String.fromCodePoint(code)
+    : original;
 }
 
 /** A sinopse do Google vem com HTML (<p>, <br>, <b>): fica só o texto. */
@@ -137,7 +149,13 @@ function toPlainText(html: string | undefined): string | null {
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#(\d+);/g, (match, code) => fromCodePoint(Number(code), match))
+    .replace(
+      /&#x([0-9a-f]+);/gi,
+      (match, code) => fromCodePoint(parseInt(code, 16), match),
+    )
     .replace(/&amp;/g, "&")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
