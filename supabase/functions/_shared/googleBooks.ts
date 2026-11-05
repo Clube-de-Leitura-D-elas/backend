@@ -65,13 +65,16 @@ async function callBooksApi(
     url.searchParams.set(name, value);
   }
 
-  // Opcional: sem chave a API funciona, mas com limite por IP.
+  const headers: Record<string, string> = {};
   const key = Deno.env.get("GOOGLE_BOOKS_API_KEY");
-  if (key) url.searchParams.set("key", key);
+  if (key) headers["X-Goog-Api-Key"] = key;
 
   let response: Response;
   try {
-    response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    response = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
   } catch (error) {
     console.error(
       `${logLabel} google books request failed`,
