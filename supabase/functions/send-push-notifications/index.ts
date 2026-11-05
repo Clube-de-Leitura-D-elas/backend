@@ -102,6 +102,17 @@ Deno.serve(async (req) => {
   // e que possuam um fcm_token cadastrado
   const cleanUserIds = user_ids.map((id) => String(id).trim());
 
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const invalidUuids = cleanUserIds.filter((id) => !UUID_REGEX.test(id));
+  if (invalidUuids.length > 0) {
+    return Response.json(
+      {
+        error: `Invalid UUID format detected: ${invalidUuids.map((id) => `"${id}"`).join(", ")}. UUIDs must contain only 0-9 and a-f characters.`,
+      },
+      { status: 400 },
+    );
+  }
+
   const { data: users, error: usersError } = await supabase
     .from("users")
     .select("id, user_id, name, fcm_token")
