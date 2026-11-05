@@ -645,3 +645,8 @@ import_map = "./functions/get-book-recommendation-groups/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/recommend-book/deno.json"
+
+[functions.get-my-reviewed-books]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-my-reviewed-books/deno.json"
