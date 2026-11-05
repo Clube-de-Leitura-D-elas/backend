@@ -5,6 +5,26 @@ const LANGUAGE = "pt";
 const MAX_RESULTS = 10;
 const TIMEOUT_MS = 5000;
 const UNKNOWN_AUTHOR = "Autor desconhecido";
+const REPLACEMENT_CHARACTER = "\uFFFD";
+
+/** Entidades nomeadas mais comuns nas descrições do Google Books. */
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  ndash: "–",
+  mdash: "—",
+  hellip: "…",
+  laquo: "«",
+  raquo: "»",
+  lsquo: "‘",
+  rsquo: "’",
+  ldquo: "“",
+  rdquo: "”",
+};
 
 /** O que a busca devolve para o app escolher. */
 export type BookSuggestion = {
@@ -65,6 +85,9 @@ async function callBooksApi(
     url.searchParams.set(name, value);
   }
 
+  // A chave vai no cabeçalho, nunca na URL, para não aparecer em logs de erro.
+  // Sem chave o Google usa um projeto anônimo com cota zero: a chamada volta
+  // 429 e vira o erro tratado "quota_exceeded".
   const headers: Record<string, string> = {};
   const key = Deno.env.get("GOOGLE_BOOKS_API_KEY");
   if (key) headers["X-Goog-Api-Key"] = key;
@@ -102,8 +125,11 @@ async function callBooksApi(
 
   try {
     return await response.json();
-  } catch {
-    console.error(`${logLabel} google books invalid json`);
+  } catch (error) {
+    console.error(
+      `${logLabel} google books invalid response`,
+      oneLine(String(error)),
+    );
     return { error: "unavailable" };
   }
 }
@@ -122,65 +148,113 @@ function errorCodeFor(status: number, body: string): GoogleBooksErrorCode {
   return "unavailable";
 }
 
-/** Força https e tira o efeito de página dobrada (`edge`) da capa. */
-function toHttps(url: string | undefined): string | null {
+/**
+ * Capa em https e sem o efeito de página dobrada (`edge`). Só aceita links
+ * http(s): qualquer outro esquema (`data:`, `javascript:`...) vira sem capa.
+ */
+function toCoverUrl(url: string | undefined): string | null {
   if (!url) return null;
+
+  let parsed: URL;
   try {
-    const parsed = new URL(url);
-    parsed.protocol = "https:";
-    parsed.searchParams.delete("edge");
-    return parsed.toString();
+    parsed = new URL(url);
   } catch {
     return null;
   }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+
+  parsed.protocol = "https:";
+  parsed.searchParams.delete("edge");
+  return parsed.toString();
 }
-/** A sinopse do Google vem com HTML (<p>, <br>, <b>): fica só o texto. */
-function fromCodePoint(code: number, original: string): string {
-  return Number.isInteger(code) && code >= 0 && code <= 0x10ffff
-    ? String.fromCodePoint(code)
-    : original;
+
+/**
+ * Como o parser HTML: 0, metades de par substituto (surrogates) e valores fora
+ * do Unicode viram U+FFFD. O `\0` também quebraria o insert no Postgres.
+ */
+function fromCodePoint(code: number): string {
+  const invalid = !Number.isSafeInteger(code) || code === 0 ||
+    code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff);
+  return invalid ? REPLACEMENT_CHARACTER : String.fromCodePoint(code);
+}
+
+/**
+ * Decodifica as entidades numa passada só, para um `&amp;lt;` virar o texto
+ * `&lt;` e não `<`. Entidade nomeada desconhecida fica como veio.
+ */
+function decodeEntities(text: string): string {
+  return text.replace(
+    /&(?:#(\d+)|#x([0-9a-f]+)|([a-z]+));/gi,
+    (match, decimal?: string, hex?: string, name?: string) => {
+      if (decimal !== undefined) return fromCodePoint(Number(decimal));
+      if (hex !== undefined) return fromCodePoint(parseInt(hex, 16));
+      return NAMED_ENTITIES[name!.toLowerCase()] ?? match;
+    },
+  );
+}
+
+/**
+ * Tira caracteres de controle, que o Postgres recusa (`\0`) ou que não têm uso
+ * em texto. Mantém só a quebra de linha e o tab.
+ */
+function stripControlCharacters(text: string): string {
+  let result = "";
+  for (const char of text) {
+    const code = char.codePointAt(0)!;
+    if (code === 0x09 || code === 0x0a || (code >= 0x20 && code !== 0x7f)) {
+      result += char;
+    }
+  }
+  return result;
 }
 
 /** A sinopse do Google vem com HTML (<p>, <br>, <b>): fica só o texto. */
 function toPlainText(html: string | undefined): string | null {
   if (!html) return null;
-  const text = html
-    .replace(/<br\s*\/?>|<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&#(\d+);/g, (match, code) => fromCodePoint(Number(code), match))
-    .replace(
-      /&#x([0-9a-f]+);/gi,
-      (match, code) => fromCodePoint(parseInt(code, 16), match),
-    )
-    .replace(/&amp;/g, "&")
+
+  const withoutTags = html
+    .replace(/<br\s*\/?>|<\/(?:p|div|li)>/gi, "\n")
+    .replace(/<[^>]*>/g, "");
+
+  const text = stripControlCharacters(
+    decodeEntities(withoutTags).replace(/\r\n?/g, "\n"),
+  )
+    .replace(/[ \t\u00A0]+/g, " ")
+    .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
   return text || null;
 }
 
-function mapVolume(volume: GoogleVolume): GoogleBookDetails | null {
-  const info = volume.volumeInfo;
-  const title = info?.title?.trim();
-  if (!isGoogleVolumeId(volume.id) || !title) return null;
+/** Texto aparado, ou `undefined` se o campo não for texto ou vier vazio. */
+function cleanText(value: unknown): string | undefined {
+  return typeof value === "string" ? value.trim() || undefined : undefined;
+}
 
-  const subtitle = info?.subtitle?.trim();
-  const authors = (info?.authors ?? [])
-    .map((author) => author.trim())
-    .filter((author) => author.length > 0);
+function mapVolume(volume: unknown): GoogleBookDetails | null {
+  if (typeof volume !== "object" || volume === null) return null;
+  const { id, volumeInfo: info } = volume as GoogleVolume;
+
+  const title = cleanText(info?.title);
+  if (!isGoogleVolumeId(id) || !title) return null;
+
+  const subtitle = cleanText(info?.subtitle);
+  const authors = (Array.isArray(info?.authors) ? info.authors : [])
+    .map(cleanText)
+    .filter((author): author is string => author !== undefined);
+  const categories = Array.isArray(info?.categories) ? info.categories : [];
 
   return {
-    externalId: volume.id,
+    externalId: id,
     name: subtitle ? `${title}: ${subtitle}` : title,
     author: authors.length > 0 ? authors.join(", ") : UNKNOWN_AUTHOR,
-    publisher: info?.publisher?.trim() ?? "",
-    genre: info?.categories?.[0]?.trim() ?? "",
-    synopsis: toPlainText(info?.description),
-    coverUrl: toHttps(
-      info?.imageLinks?.thumbnail ?? info?.imageLinks?.smallThumbnail,
+    publisher: cleanText(info?.publisher) ?? "",
+    genre: cleanText(categories[0]) ?? "",
+    synopsis: toPlainText(cleanText(info?.description)),
+    coverUrl: toCoverUrl(
+      cleanText(info?.imageLinks?.thumbnail) ??
+        cleanText(info?.imageLinks?.smallThumbnail),
     ),
   };
 }
@@ -197,10 +271,12 @@ export async function searchGoogleBooks(
   }, logLabel);
   if (isGoogleBooksError(result)) return result;
 
-  const items = (result as { items?: GoogleVolume[] }).items ?? [];
+  const items = (result as { items?: unknown } | null)?.items;
   const seen = new Set<string>();
 
-  return items.flatMap((volume) => {
+  if (!Array.isArray(items)) return [];
+
+  return items.flatMap((volume: unknown) => {
     const book = mapVolume(volume);
     if (!book || seen.has(book.externalId)) return [];
     seen.add(book.externalId);
@@ -222,5 +298,5 @@ export async function getGoogleBook(
   const result = await callBooksApi(`/volumes/${volumeId}`, {}, logLabel);
   if (isGoogleBooksError(result)) return result;
 
-  return mapVolume(result as GoogleVolume) ?? { error: "not_found" };
+  return mapVolume(result) ?? { error: "not_found" };
 }
