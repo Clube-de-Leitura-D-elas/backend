@@ -84,7 +84,15 @@ async function callBooksApi(
   }
 
   if (!response.ok) {
-    const body = await response.text();
+    let body = "";
+    try {
+      body = await response.text();
+    } catch (error) {
+      console.error(
+        `${logLabel} google books error body failed`,
+        oneLine(String(error)),
+      );
+    }
     console.error(
       `${logLabel} google books error ${response.status}`,
       oneLine(body),
