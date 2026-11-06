@@ -1,8 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { withSupabase } from "jsr:@supabase/server@^1";
+import { type SupabaseContext, withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { oneLine } from "../_shared/log.ts";
 import { readMeetingIdParam } from "../_shared/meeting.ts";
+import { signMeetingPhotos } from "../_shared/meetingPhoto.ts";
 import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 import { requireRole } from "../_shared/role.ts";
 
@@ -37,6 +38,15 @@ type ParticipantRow = {
 };
 
 type AttendanceRow = ParticipantRow & { presence_status: string | null };
+
+type PhotoRow = {
+  photos: {
+    id: string;
+    url: string;
+    created_at: string;
+    uploaded_by: string;
+  } | null;
+};
 
 // Detalhes de um evento (encontro) no painel web. Query string: eventId.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
@@ -102,6 +112,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: attendanceError.message }, { status: 500 });
   }
 
+  const photos = await loadEventPhotos(ctx, req, event.id);
+  if (photos instanceof Response) return photos;
+
   // Participantes ativas do grupo + quem tem presença registrada no encontro
   // (convidadas e quem saiu do grupo depois de participar).
   const rowsByUser = new Map<string, ParticipantRow>();
@@ -135,7 +148,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     })
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
-  // Objeto fácil de estender: as CLU-207 e seguintes acrescentam blocos aqui.
+  // Objeto fácil de estender: as próximas issues acrescentam blocos aqui.
   return Response.json({
     id: event.id,
     startsAt: event.date,
@@ -171,5 +184,76 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       total: participants.length,
     },
     participants,
+    photos,
   });
 }));
+
+// Fotos do evento em ordem de envio, com URL assinada (o bucket é privado) e
+// o nome de quem enviou. Foto sem URL assinada fica de fora, como no app.
+async function loadEventPhotos(
+  ctx: SupabaseContext<Database>,
+  req: Request,
+  eventId: string,
+) {
+  const { data, error } = await ctx.supabaseAdmin
+    .from("meeting_photos")
+    .select("photos!inner(id, url, created_at, uploaded_by)")
+    .eq("meeting_id", eventId);
+
+  if (error) return photosError("load", error.message);
+
+  const rows = ((data ?? []) as unknown as PhotoRow[])
+    .flatMap((row) => row.photos ? [row.photos] : [])
+    .sort((a, b) =>
+      Date.parse(a.created_at) - Date.parse(b.created_at) ||
+      a.id.localeCompare(b.id)
+    );
+  if (rows.length === 0) return [];
+
+  // `photos.uploaded_by` não tem FK para `users`, então o nome vem à parte.
+  const uploaderIds = [...new Set(rows.map((row) => row.uploaded_by))];
+  const { data: uploaders, error: uploadersError } = await ctx.supabaseAdmin
+    .from("users")
+    .select("id, name")
+    .in("id", uploaderIds);
+
+  if (uploadersError) return photosError("uploaders", uploadersError.message);
+
+  const nameById = new Map(
+    (uploaders ?? []).map((user) => [user.id, user.name as string]),
+  );
+
+  const signed = await signMeetingPhotos(
+    ctx,
+    req,
+    eventId,
+    rows.map(({ id, url }) => ({ id, url })),
+  );
+  if (signed instanceof Response) return signed;
+
+  const urlById = new Map(signed.map((photo) => [photo.id, photo.url]));
+
+  return rows.flatMap((row) => {
+    const url = urlById.get(row.id);
+    if (!url) return [];
+    const uploaderName = nameById.get(row.uploaded_by);
+    return [{
+      id: row.id,
+      url,
+      // Sem versão reduzida: a transformação de imagem do Storage é só do plano
+      // Pro. O contrato aceita a original no lugar da miniatura.
+      thumbnailUrl: url,
+      uploadedAt: row.created_at,
+      uploadedBy: uploaderName
+        ? { id: row.uploaded_by, name: uploaderName }
+        : null,
+    }];
+  });
+}
+
+function photosError(step: string, message: string) {
+  console.error(`event-details-web photos ${step}`, oneLine(message));
+  return Response.json({ error: "Unable to load event photos" }, {
+    status: 500,
+  });
+}
