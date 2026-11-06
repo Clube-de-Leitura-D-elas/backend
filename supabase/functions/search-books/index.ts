@@ -120,26 +120,39 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         googleResults.error,
       );
     } else {
+      const MAX_CONCURRENT_IMPORTS = 3;
+      const suggestions = googleResults;
+      const profileId = profile.id;
+
       let databaseFailure: Response | null = null;
+      let nextIndex = 0;
 
-      for (const suggestion of googleResults) {
-        const result = await findOrCreateBook(
-          ctx,
-          suggestion.externalId,
-          profile.id,
-          LOG_LABEL,
-        );
+      async function importWorker(): Promise<void> {
+        while (nextIndex < suggestions.length && !databaseFailure) {
+          const suggestion = suggestions[nextIndex++];
 
-        if (result instanceof Response) {
-          if (result.status === 500) {
+          const result = await findOrCreateBook(
+            ctx,
+            suggestion.externalId,
+            profileId,
+            LOG_LABEL,
+          );
+
+          if (result instanceof Response && result.status === 500) {
             databaseFailure = result;
-            break;
+            return;
           }
 
           // Falhas da API externa não impedem a busca local.
-          continue;
         }
       }
+
+      await Promise.all(
+        Array.from(
+          { length: Math.min(MAX_CONCURRENT_IMPORTS, suggestions.length) },
+          () => importWorker(),
+        ),
+      );
 
       if (databaseFailure) {
         return databaseFailure;
