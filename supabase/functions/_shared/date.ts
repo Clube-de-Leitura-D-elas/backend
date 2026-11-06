@@ -23,3 +23,16 @@ export function todayInSaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: SAO_PAULO })
     .format(new Date());
 }
+
+export function nowIso(now: Date = new Date()): string {
+  return now.toISOString();
+}
+
+export function isFutureOrNowInstant(
+  timestamp: string | null | undefined,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!timestamp) return false;
+  const parsed = Date.parse(timestamp);
+  return !Number.isNaN(parsed) && parsed >= nowMs;
+}

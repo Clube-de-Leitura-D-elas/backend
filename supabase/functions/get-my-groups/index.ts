@@ -208,12 +208,6 @@ function canManageTasks(
 
 function isUpcoming(meeting: MeetingRow, now: number): boolean {
   if (meeting.status === "IN_PROGRESS") return true;
-  if (
-    meeting.status === "ENDED" ||
-    meeting.status === "CREATED" ||
-    !meeting.date
-  ) {
-    return false;
-  }
+  if (meeting.status === "ENDED" || !meeting.date) return false;
   return Date.parse(meeting.date) >= now;
 }

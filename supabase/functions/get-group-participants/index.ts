@@ -1,7 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
+import { isFutureOrNowInstant, nowIso } from "../_shared/date.ts";
 import { readGroupIdParam, requireGroupMember } from "../_shared/group.ts";
+import { oneLine } from "../_shared/log.ts";
 import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 
 type GroupUserRow = {
@@ -15,6 +17,7 @@ type GroupUserRow = {
 };
 
 type CurrentMeetingRow = {
+  id: string;
   host_id: string;
   date: string | null;
   status: string;
@@ -60,27 +63,39 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: error.message }, { status: 500 });
   }
 
-  const nowIso = new Date().toISOString();
+  const currentIso = nowIso();
   const { data: meetingsData, error: meetingsError } = await ctx.supabaseAdmin
     .from("meetings")
-    .select("host_id, date, status")
+    .select("id, host_id, date, status")
     .eq("group_id", groupId)
     .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
-    .or(`date.gte.${nowIso},status.eq.IN_PROGRESS,status.eq.CREATED`)
+    .or(`date.gte.${currentIso},status.eq.IN_PROGRESS,status.eq.CREATED`)
     .order("date", { ascending: true, nullsFirst: false })
-    .limit(1);
+    .order("id", { ascending: true });
 
   if (meetingsError) {
     console.error(
       "get-group-participants meetings error",
-      meetingsError.message.replace(/[\r\n]/g, " "),
+      oneLine(meetingsError.message),
     );
-    return Response.json({ error: meetingsError.message }, { status: 500 });
+    return Response.json(
+      { error: "Unable to load group participants" },
+      { status: 500 },
+    );
   }
 
+  const nowMs = Date.parse(currentIso);
+  const meetings = (meetingsData ?? []) as unknown as CurrentMeetingRow[];
+  const activeOrUpcomingMeeting = meetings.find(
+    (meeting) =>
+      meeting.status === "IN_PROGRESS" ||
+      isFutureOrNowInstant(meeting.date, nowMs),
+  );
+  const draftMeeting = meetings.find(
+    (meeting) => meeting.status === "CREATED" && !meeting.date,
+  );
   const currentHostGroupUserId =
-    ((meetingsData ?? []) as unknown as CurrentMeetingRow[])[0]?.host_id ??
-      null;
+    (activeOrUpcomingMeeting ?? draftMeeting)?.host_id ?? null;
 
   const rows = (data ?? []) as unknown as GroupUserRow[];
 
