@@ -5,12 +5,19 @@ import { readGroupIdParam, requireGroupMember } from "../_shared/group.ts";
 import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 
 type GroupUserRow = {
+  id: string;
   is_coordinator: boolean;
   users: {
     id: string;
     name: string;
     photos: { url: string } | null;
   };
+};
+
+type CurrentMeetingRow = {
+  host_id: string;
+  date: string | null;
+  status: string;
 };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
@@ -42,7 +49,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   // grupo), para o número do título bater com o tamanho da lista.
   const { data, error } = await ctx.supabaseAdmin
     .from("group_users")
-    .select("is_coordinator, users!inner(id, name, photos(url))")
+    .select("id, is_coordinator, users!inner(id, name, photos(url))")
     .eq("group_id", groupId);
 
   if (error) {
@@ -52,6 +59,28 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     );
     return Response.json({ error: error.message }, { status: 500 });
   }
+
+  const nowIso = new Date().toISOString();
+  const { data: meetingsData, error: meetingsError } = await ctx.supabaseAdmin
+    .from("meetings")
+    .select("host_id, date, status")
+    .eq("group_id", groupId)
+    .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
+    .or(`date.gte.${nowIso},status.eq.IN_PROGRESS,status.eq.CREATED`)
+    .order("date", { ascending: true, nullsFirst: false })
+    .limit(1);
+
+  if (meetingsError) {
+    console.error(
+      "get-group-participants meetings error",
+      meetingsError.message.replace(/[\r\n]/g, " "),
+    );
+    return Response.json({ error: meetingsError.message }, { status: 500 });
+  }
+
+  const currentHostGroupUserId =
+    ((meetingsData ?? []) as unknown as CurrentMeetingRow[])[0]?.host_id ??
+      null;
 
   const rows = (data ?? []) as unknown as GroupUserRow[];
 
@@ -68,6 +97,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       name: row.users.name,
       photo_url: resolvePhotoUrl(row.users.photos?.url),
       role: row.is_coordinator ? "coordinator" : "member",
+      is_coordinator: row.is_coordinator,
+      is_host: row.id === currentHostGroupUserId,
     })),
   });
 }));
