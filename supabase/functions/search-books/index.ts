@@ -8,8 +8,6 @@ import {
   searchGoogleBooks,
 } from "../_shared/googleBooks.ts";
 
-import { findOrCreateBook } from "../_shared/books.ts";
-
 const LOG_LABEL = "search-books";
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -98,18 +96,24 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     );
   }
 
-  let { data: catalogData, error: catalogError } = await ctx.supabaseAdmin.rpc(
-    "search_books_catalog",
-    {
+  const { data: catalogData, error: catalogError } = await ctx.supabaseAdmin
+    .rpc("search_books_catalog", {
       p_query: q || null,
       p_offset: offset,
       p_limit: pageSize + 1,
-    },
-  );
+    });
 
   if (catalogError) {
     return dbError("catalog", catalogError);
   }
+
+  let googleSuggestions: {
+    external_id: string;
+    title: string;
+    author: string;
+    cover_url: string | null;
+    source: "google";
+  }[] = [];
 
   if (q && page === 1 && (catalogData ?? []).length < pageSize) {
     const googleResults = await searchGoogleBooks(q, LOG_LABEL);
@@ -120,62 +124,15 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         googleResults.error,
       );
     } else {
-      const MAX_CONCURRENT_IMPORTS = 3;
-      const suggestions = googleResults;
-      const profileId = profile.id;
-
-      let databaseFailure: Response | null = null;
-      let nextIndex = 0;
-
-      async function importWorker(): Promise<void> {
-        while (nextIndex < suggestions.length && !databaseFailure) {
-          const suggestion = suggestions[nextIndex++];
-
-          const result = await findOrCreateBook(
-            ctx,
-            suggestion.externalId,
-            profileId,
-            LOG_LABEL,
-          );
-
-          if (result instanceof Response && result.status === 500) {
-            databaseFailure = result;
-            return;
-          }
-
-          // Falhas da API externa não impedem a busca local.
-        }
-      }
-
-      await Promise.all(
-        Array.from(
-          { length: Math.min(MAX_CONCURRENT_IMPORTS, suggestions.length) },
-          () => importWorker(),
-        ),
-      );
-
-      if (databaseFailure) {
-        return databaseFailure;
-      }
-
-      const refreshed = await ctx.supabaseAdmin.rpc(
-        "search_books_catalog",
-        {
-          p_query: q,
-          p_offset: offset,
-          p_limit: pageSize + 1,
-        },
-      );
-
-      catalogData = refreshed.data;
-      catalogError = refreshed.error;
-
-      if (catalogError) {
-        return dbError("catalog refresh", catalogError);
-      }
+      googleSuggestions = googleResults.map((book) => ({
+        external_id: book.externalId,
+        title: book.title,
+        author: book.author,
+        cover_url: book.coverUrl ?? null,
+        source: "google" as const,
+      }));
     }
   }
-
   const catalog = (catalogData ?? []) as CatalogRow[];
   const hasMore = catalog.length > pageSize;
   const selected = catalog.slice(0, pageSize);
@@ -183,6 +140,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (selected.length === 0) {
     return Response.json({
       items: [],
+      google_suggestions: googleSuggestions,
       page,
       page_size: pageSize,
       has_more: false,
@@ -242,6 +200,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   return Response.json({
     items,
+    google_suggestions: googleSuggestions,
     page,
     page_size: pageSize,
     has_more: hasMore,
