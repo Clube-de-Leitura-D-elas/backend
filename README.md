@@ -116,6 +116,71 @@ editar uma já aplicada.
 
 ---
 
+## 🔔 Como criar um novo aviso
+
+Todo aviso é gravado pela função SQL `public.create_notification`, que cria a notificação e uma
+linha por destinatária em `notifications_targets` na mesma transação. O app lê pela
+`get-my-notifications` e marca como lido pela `mark-notification-read`; nenhuma das duas muda para
+um aviso novo.
+
+1. **Escolha o `type`** em `notification_type`. Se nenhum servir, adicione o valor numa migration
+   (`ALTER TYPE public.notification_type ADD VALUE IF NOT EXISTS '<NOVO_TIPO>';`). O Postgres não
+   deixa usar o valor novo na mesma migration em que ele foi criado: grave avisos com ele em outra
+   migration ou só a partir das functions.
+2. **Monte a `dedup_key`** no formato `<TYPE>:<id do evento>[:<marco>]`, por exemplo
+   `DRAW_RESULT:<meeting_raffle_id>` ou `MEETING_REMINDER:<meeting_id>:1d`. Com a mesma chave, uma
+   segunda chamada não cria nada e devolve o id da primeira, então o evento ou o job pode rodar de
+   novo sem duplicar o aviso. Deixe `NULL` só quando repetir o aviso for o comportamento desejado.
+3. **Decida as destinatárias** e passe os ids de `public.users` (não de `auth.users`). Para avisos
+   de grupo, filtre como o resto do código: `group_users.registration_status = 'ACTIVE'` e
+   `users.is_active`. Ids repetidos e `NULL` são ignorados; lista vazia não cria nada e devolve
+   `NULL`.
+4. **Chame `create_notification` no ponto do evento.** Se o evento já é uma função SQL, chame lá
+   dentro, para o aviso existir só se o evento for gravado:
+
+   ```sql
+   PERFORM public.create_notification(
+     'DRAW_RESULT',
+     'Resultado do sorteio',
+     'Saiu o resultado do sorteio do próximo encontro.',
+     ARRAY(
+       SELECT gu.user_id
+       FROM public.group_users gu
+       JOIN public.users u ON u.id = gu.user_id
+       WHERE gu.group_id = v_group_id
+         AND gu.registration_status = 'ACTIVE'
+         AND u.is_active
+     ),
+     p_meeting_id => v_meeting_id,
+     p_group_id => v_group_id,
+     p_dedup_key => 'DRAW_RESULT:' || v_raffle_id
+   );
+   ```
+
+   Numa edge function, chame por RPC com o client de service role:
+
+   ```ts
+   const { error } = await ctx.supabaseAdmin.rpc("create_notification", {
+     p_type: "MEETING_REMINDER",
+     p_title: "Encontro amanhã",
+     p_message: "Seu encontro é amanhã.",
+     p_user_ids: recipientIds,
+     p_meeting_id: meetingId,
+     p_group_id: groupId,
+     p_dedup_key: `MEETING_REMINDER:${meetingId}:1d`,
+   });
+   ```
+
+   Para lembretes, um agendador pode chamar a função antes da hora com `p_scheduled_for` no futuro:
+   o aviso só aparece (e só conta no `unread_count`) quando essa data chega.
+
+A função só pode ser executada pela service role. `title` e `message` são o texto que a leitora vê,
+em pt-BR. Se `p_meeting_id` e `p_group_id` forem passados juntos, o encontro precisa ser do grupo.
+
+Referência: CLU-296, que criou esta base (`create_notification`, `dedup_key` e `unread_count`).
+
+---
+
 ## 🔐 Segredos
 
 Nenhuma chave do Supabase é commitada. As credenciais ficam no **GitHub Secrets** do repositório e devem ser adicionadas manualmente no `.env` do app mobile.
