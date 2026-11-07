@@ -69,6 +69,8 @@ Algumas funções dependem de chaves externas para funcionar localmente. Crie o 
 ```env
 GOOGLE_PLACES_API_KEY=<sua chave da Google Places API>
 GOOGLE_BOOKS_API_KEY=<sua chave da Google Books API>
+RESEND_API_KEY=<sua chave da Resend>
+EMAIL_FROM=<remetente verificado na Resend>
 ```
 
 > A `GOOGLE_PLACES_API_KEY` é usada pelas funções `search-places` e `update-meeting` para
@@ -84,6 +86,13 @@ GOOGLE_BOOKS_API_KEY=<sua chave da Google Books API>
 > 2. Em **APIs e serviços → Biblioteca**, ative a **Books API**.
 > 3. Em **Credenciais → Criar credenciais → Chave de API**, restrinja a chave à **Books API**.
 > 4. Coloque a chave no `supabase/functions/.env.local`. Nunca commite a chave.
+>
+> A `RESEND_API_KEY` e a `EMAIL_FROM` são usadas pelo helper `_shared/approvalEmail.ts`, que envia
+> o e-mail de aprovação da solicitação (`accept-pending-user`). A aprovação é **tudo-ou-nada**:
+> sem essas variáveis (ou com o Resend fora do ar) o envio falha, a aprovação é desfeita e a rota
+> responde 500 — a solicitação continua pendente no painel. Para testar o envio de verdade, use
+> uma chave da [Resend](https://resend.com) e um remetente verificado; para testar sem enviar
+> e-mail, aponte `RESEND_BASE_URL` para um mock local (o SDK do Resend respeita essa variável).
 
 ```bash
 # Sobe as edge functions com as variáveis de ambiente locais
@@ -125,6 +134,8 @@ Nenhuma chave do Supabase é commitada. As credenciais ficam no **GitHub Secrets
 | Credenciais Supabase | GitHub Secrets | `.env` do app mobile |
 | `GOOGLE_PLACES_API_KEY` | `npx supabase secrets set GOOGLE_PLACES_API_KEY=...` | `supabase/functions/.env.local` |
 | `GOOGLE_BOOKS_API_KEY` | `npx supabase secrets set GOOGLE_BOOKS_API_KEY=...` | `supabase/functions/.env.local` |
+| `RESEND_API_KEY` | `npx supabase secrets set RESEND_API_KEY=...` | `supabase/functions/.env.local` |
+| `EMAIL_FROM` | `npx supabase secrets set EMAIL_FROM=...` | `supabase/functions/.env.local` |
 
 ---
 

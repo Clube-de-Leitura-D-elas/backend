@@ -660,3 +660,8 @@ import_map = "./functions/get-my-reviewed-books/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/search-books/deno.json"
+
+[functions.accept-pending-user]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/accept-pending-user/index.ts"
