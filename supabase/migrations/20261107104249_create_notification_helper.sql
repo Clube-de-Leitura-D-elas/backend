@@ -28,10 +28,12 @@ CREATE INDEX IF NOT EXISTS notifications_targets_user_id_idx
   ON public.notifications_targets (user_id);
 
 -- meeting_id e group_id ficam juntos em notifications_targets. A FK composta
--- garante no banco que o grupo é o do encontro. O backfill alinha linhas
--- antigas ao grupo do encontro antes da FK (hoje nada grava avisos, então não
--- deve haver nenhuma). NO ACTION como as outras FKs da tabela: mudar o grupo
--- de um encontro com avisos falha em vez de deixá-los no grupo errado.
+-- garante no banco que o grupo é o do encontro, e o CHECK impede encontro sem
+-- grupo (a FK composta não confere a linha quando uma das colunas é NULL).
+-- Aviso só de grupo, sem encontro, continua válido. O backfill alinha linhas
+-- antigas ao grupo do encontro antes das constraints (hoje nada grava avisos,
+-- então não deve haver nenhuma). NO ACTION como as outras FKs da tabela: mudar
+-- o grupo de um encontro com avisos falha em vez de deixá-los no grupo errado.
 UPDATE public.notifications_targets nt
 SET group_id = m.group_id
 FROM public.meetings m
@@ -46,17 +48,22 @@ ALTER TABLE public.notifications_targets
   FOREIGN KEY (meeting_id, group_id)
   REFERENCES public.meetings (id, group_id);
 
--- p_user_ids são ids de public.users. Ids que não existem lá (removidos, ou de
--- auth.users por engano) são descartados com WARNING no log, para um id
--- inválido não desfazer o evento que chamou a função. Sem destinatária
--- válida, não cria nada e devolve NULL.
---
--- Com p_meeting_id, o grupo vem do encontro quando p_group_id não é passado.
---
+ALTER TABLE public.notifications_targets
+  ADD CONSTRAINT notifications_targets_meeting_requires_group
+  CHECK (meeting_id IS NULL OR group_id IS NOT NULL);
+
 -- Com dedup_key já usada, devolve o id existente sem mudar título, mensagem
--- nem destinatárias. Se o aviso ainda não apareceu (scheduled_for no futuro),
--- passa a valer o novo p_scheduled_for: um lembrete de encontro remarcado
--- acompanha a nova data. Aviso que já apareceu não muda.
+-- nem destinatárias, mesmo que a nova lista venha vazia. Se a chamada informa
+-- p_scheduled_for e o aviso ainda não apareceu, passa a valer a nova data: um
+-- lembrete de encontro remarcado acompanha o encontro. Sem p_scheduled_for, a
+-- data existente fica; aviso que já apareceu não muda.
+--
+-- Aviso novo: p_scheduled_for omitido vale agora. p_user_ids são ids de
+-- public.users; ids que não existem lá (removidos, ou de auth.users por engano)
+-- são descartados com WARNING no log, para um id inválido não desfazer o
+-- evento que chamou a função. Sem destinatária válida, não cria nada e devolve
+-- NULL. Com p_meeting_id, o grupo vem do encontro quando p_group_id não é
+-- passado.
 CREATE OR REPLACE FUNCTION public.create_notification(
   p_type public.notification_type,
   p_title text,
@@ -64,7 +71,7 @@ CREATE OR REPLACE FUNCTION public.create_notification(
   p_user_ids uuid[],
   p_meeting_id uuid DEFAULT NULL,
   p_group_id uuid DEFAULT NULL,
-  p_scheduled_for timestamp with time zone DEFAULT now(),
+  p_scheduled_for timestamp with time zone DEFAULT NULL,
   p_dedup_key text DEFAULT NULL
 )
 RETURNS uuid
@@ -76,8 +83,25 @@ DECLARE
   recipient_ids uuid[];
   target_group_id uuid := p_group_id;
   result_id uuid;
-  was_inserted boolean;
 BEGIN
+  IF p_dedup_key IS NOT NULL THEN
+    SELECT n.id
+    INTO result_id
+    FROM public.notifications n
+    WHERE n.dedup_key = p_dedup_key
+    FOR UPDATE;
+
+    IF result_id IS NOT NULL THEN
+      UPDATE public.notifications n
+      SET scheduled_for = p_scheduled_for
+      WHERE n.id = result_id
+        AND p_scheduled_for IS NOT NULL
+        AND n.scheduled_for > now();
+
+      RETURN result_id;
+    END IF;
+  END IF;
+
   SELECT count(DISTINCT given_id)
   INTO requested_count
   FROM unnest(p_user_ids) AS given_id;
@@ -105,16 +129,14 @@ BEGIN
     WHERE m.id = p_meeting_id;
   END IF;
 
-  -- xmax = 0 só na linha recém-inserida; na linha atualizada pelo
-  -- DO UPDATE, as destinatárias já existem.
-  INSERT INTO public.notifications AS n
+  -- O conflito aqui só acontece se outra transação criou a mesma chave depois
+  -- da busca acima; nesse caso vale o aviso dela.
+  INSERT INTO public.notifications
     (title, message, type, scheduled_for, dedup_key)
   VALUES
     (p_title, p_message, p_type, coalesce(p_scheduled_for, now()), p_dedup_key)
-  ON CONFLICT (dedup_key) DO UPDATE
-  SET scheduled_for = EXCLUDED.scheduled_for
-  WHERE n.scheduled_for > now()
-  RETURNING n.id, (n.xmax = 0) INTO result_id, was_inserted;
+  ON CONFLICT (dedup_key) DO NOTHING
+  RETURNING id INTO result_id;
 
   IF result_id IS NULL THEN
     SELECT n.id
@@ -122,10 +144,6 @@ BEGIN
     FROM public.notifications n
     WHERE n.dedup_key = p_dedup_key;
 
-    RETURN result_id;
-  END IF;
-
-  IF NOT was_inserted THEN
     RETURN result_id;
   END IF;
 

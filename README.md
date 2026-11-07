@@ -131,10 +131,12 @@ um aviso novo.
    no PR que o `mobile` precisa mapear o tipo; até lá, o app mostra o aviso com o ícone genérico.
 2. **Monte a `dedup_key`** no formato `<TYPE>:<id do evento>[:<marco>]`, por exemplo
    `DRAW_RESULT:<meeting_raffle_id>` ou `MEETING_REMINDER:<meeting_id>:1d`. Com a mesma chave, uma
-   segunda chamada não cria outro aviso e devolve o id do primeiro, então o evento ou o job pode
-   rodar de novo sem duplicar. Se o aviso ainda não apareceu, a segunda chamada atualiza o
-   `scheduled_for` (útil para encontro remarcado); título, mensagem e destinatárias não mudam. Deixe
-   `NULL` só quando repetir o aviso for o comportamento desejado.
+   segunda chamada não cria outro aviso e devolve o id do primeiro, mesmo que a nova lista de
+   destinatárias venha vazia, então o evento ou o job pode rodar de novo sem duplicar. Título,
+   mensagem e destinatárias não mudam. Se a segunda chamada informa `p_scheduled_for` e o aviso
+   ainda não apareceu, passa a valer a nova data (útil para encontro remarcado); sem
+   `p_scheduled_for`, a data existente fica. Deixe a chave `NULL` só quando repetir o aviso for o
+   comportamento desejado.
 3. **Decida as destinatárias** e passe os ids de `public.users` (não de `auth.users`). Para avisos
    de grupo, filtre como o resto do código: `group_users.registration_status = 'ACTIVE'` e
    `users.is_active`. Ids repetidos e `NULL` são ignorados. Ids que não existem em `public.users`
@@ -175,13 +177,15 @@ um aviso novo.
    });
    ```
 
-   Para lembretes, um agendador pode chamar a função antes da hora com `p_scheduled_for` no futuro:
-   o aviso só aparece (e só conta no `unread_count`) quando essa data chega. Como uma nova chamada
-   com a mesma chave atualiza só a data, não escreva a data do encontro em `title` nem `message`.
+   Sem `p_scheduled_for`, o aviso novo aparece na hora. Para lembretes, um agendador pode chamar a
+   função antes com `p_scheduled_for` no futuro: o aviso só aparece (e só conta no `unread_count`)
+   quando essa data chega. Como uma nova chamada com a mesma chave atualiza só a data, não escreva a
+   data do encontro em `title` nem `message`.
 
 A função só pode ser executada pela service role. `title` e `message` são o texto que a leitora vê,
-em pt-BR. Com `p_meeting_id`, o grupo vem do encontro e não precisa ser passado; uma FK composta em
-`notifications_targets` garante que o grupo gravado é sempre o do encontro.
+em pt-BR. Com `p_meeting_id`, o grupo vem do encontro e não precisa ser passado. No banco, uma FK
+composta e um `CHECK` em `notifications_targets` garantem que todo alvo com encontro tem o grupo
+desse encontro.
 
 Referência: CLU-296, que criou esta base (`create_notification`, `dedup_key` e `unread_count`).
 
