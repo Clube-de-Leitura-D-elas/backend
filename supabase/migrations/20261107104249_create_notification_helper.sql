@@ -12,9 +12,9 @@
 -- `notifications_targets` na mesma transação. Pode ser chamada de dentro de
 -- outra função SQL, na transação do próprio evento, ou por RPC. Só a service
 -- role executa; quem chama de outra função SQL precisa rodar como ela.
-
-ALTER TYPE public.notification_type
-  ADD VALUE IF NOT EXISTS 'ATTENDANCE_CONFIRMATION_REMINDER';
+--
+-- Os tipos novos do épico entram junto com o primeiro fluxo que os grava:
+-- valor de enum não sai mais do banco depois do deploy.
 
 ALTER TABLE public.notifications
   ADD COLUMN IF NOT EXISTS dedup_key text;
@@ -27,9 +27,36 @@ ALTER TABLE public.notifications
 CREATE INDEX IF NOT EXISTS notifications_targets_user_id_idx
   ON public.notifications_targets (user_id);
 
--- p_user_ids são ids de public.users (não de auth.users). Lista vazia não
--- cria nada e devolve NULL. Com dedup_key já usada, devolve o id existente sem
--- alterar a notificação nem as destinatárias.
+-- meeting_id e group_id ficam juntos em notifications_targets. A FK composta
+-- garante no banco que o grupo é o do encontro. O backfill alinha linhas
+-- antigas ao grupo do encontro antes da FK (hoje nada grava avisos, então não
+-- deve haver nenhuma). NO ACTION como as outras FKs da tabela: mudar o grupo
+-- de um encontro com avisos falha em vez de deixá-los no grupo errado.
+UPDATE public.notifications_targets nt
+SET group_id = m.group_id
+FROM public.meetings m
+WHERE m.id = nt.meeting_id
+  AND nt.group_id IS DISTINCT FROM m.group_id;
+
+ALTER TABLE public.meetings
+  ADD CONSTRAINT meetings_id_group_id_key UNIQUE (id, group_id);
+
+ALTER TABLE public.notifications_targets
+  ADD CONSTRAINT notifications_targets_meeting_group_fkey
+  FOREIGN KEY (meeting_id, group_id)
+  REFERENCES public.meetings (id, group_id);
+
+-- p_user_ids são ids de public.users. Ids que não existem lá (removidos, ou de
+-- auth.users por engano) são descartados com WARNING no log, para um id
+-- inválido não desfazer o evento que chamou a função. Sem destinatária
+-- válida, não cria nada e devolve NULL.
+--
+-- Com p_meeting_id, o grupo vem do encontro quando p_group_id não é passado.
+--
+-- Com dedup_key já usada, devolve o id existente sem mudar título, mensagem
+-- nem destinatárias. Se o aviso ainda não apareceu (scheduled_for no futuro),
+-- passa a valer o novo p_scheduled_for: um lembrete de encontro remarcado
+-- acompanha a nova data. Aviso que já apareceu não muda.
 CREATE OR REPLACE FUNCTION public.create_notification(
   p_type public.notification_type,
   p_title text,
@@ -45,36 +72,49 @@ LANGUAGE plpgsql
 SET search_path = public
 AS $$
 DECLARE
+  requested_count integer;
   recipient_ids uuid[];
+  target_group_id uuid := p_group_id;
   result_id uuid;
+  was_inserted boolean;
 BEGIN
-  SELECT array_agg(DISTINCT user_id)
+  SELECT count(DISTINCT given_id)
+  INTO requested_count
+  FROM unnest(p_user_ids) AS given_id;
+
+  SELECT array_agg(DISTINCT u.id)
   INTO recipient_ids
-  FROM unnest(p_user_ids) AS user_id
-  WHERE user_id IS NOT NULL;
+  FROM unnest(p_user_ids) AS given_id
+  JOIN public.users u ON u.id = given_id;
+
+  IF coalesce(cardinality(recipient_ids), 0) < requested_count THEN
+    RAISE WARNING 'create_notification %: % of % recipients not found in public.users',
+      coalesce(p_dedup_key, p_type::text),
+      requested_count - coalesce(cardinality(recipient_ids), 0),
+      requested_count;
+  END IF;
 
   IF recipient_ids IS NULL THEN
     RETURN NULL;
   END IF;
 
-  -- meeting_id e group_id vão juntos para cada destinatária; sem esta
-  -- checagem, um aviso poderia apontar para o encontro de outro grupo.
-  IF p_meeting_id IS NOT NULL AND p_group_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1
+  IF p_meeting_id IS NOT NULL AND target_group_id IS NULL THEN
+    SELECT m.group_id
+    INTO target_group_id
     FROM public.meetings m
-    WHERE m.id = p_meeting_id AND m.group_id = p_group_id
-  ) THEN
-    RAISE EXCEPTION 'meeting % does not belong to group %',
-      p_meeting_id, p_group_id
-      USING ERRCODE = 'invalid_parameter_value';
+    WHERE m.id = p_meeting_id;
   END IF;
 
-  INSERT INTO public.notifications
+  -- xmax = 0 só na linha recém-inserida; na linha atualizada pelo
+  -- DO UPDATE, as destinatárias já existem.
+  INSERT INTO public.notifications AS n
     (title, message, type, scheduled_for, dedup_key)
   VALUES
     (p_title, p_message, p_type, coalesce(p_scheduled_for, now()), p_dedup_key)
-  ON CONFLICT (dedup_key) DO NOTHING
-  RETURNING id INTO result_id;
+  ON CONFLICT (dedup_key) DO UPDATE
+  SET scheduled_for = EXCLUDED.scheduled_for
+  WHERE n.scheduled_for > now()
+  RETURNING n.id, (n.xmax = 0) INTO result_id, was_inserted;
 
   IF result_id IS NULL THEN
     SELECT n.id
@@ -85,9 +125,13 @@ BEGIN
     RETURN result_id;
   END IF;
 
+  IF NOT was_inserted THEN
+    RETURN result_id;
+  END IF;
+
   INSERT INTO public.notifications_targets
     (notification_id, user_id, meeting_id, group_id)
-  SELECT result_id, recipient_id, p_meeting_id, p_group_id
+  SELECT result_id, recipient_id, p_meeting_id, target_group_id
   FROM unnest(recipient_ids) AS recipient_id;
 
   RETURN result_id;
