@@ -209,9 +209,9 @@ Para adicionar um lembrete, na migration da story:
    ```
 
 Não recrie `run_scheduled_notifications` para adicionar a chamada: duas stories em paralelo
-apagariam o passo uma da outra. Cada passo roda isolado: se falhar, o que ele gravou é desfeito, o
-erro vai para o log do Postgres como `WARNING run_scheduled_notifications <passo>: ...` e os outros
-passos rodam normalmente.
+apagariam o passo uma da outra. Cada passo roda isolado: se falhar, o que ele gravou é desfeito, a
+falha é gravada em `public.scheduled_notification_failures` (e no log do Postgres como
+`WARNING run_scheduled_notifications <passo>: ...`) e os outros passos rodam normalmente.
 
 Para rodar o job na mão (SQL Editor do Studio ou `psql`):
 
@@ -231,8 +231,16 @@ ORDER BY start_time DESC
 LIMIT 10;
 ```
 
-Um passo que falhou não muda o `status` da execução, que continua `succeeded`. A falha aparece só
-no log do Postgres (no dashboard, **Logs → Postgres**, buscando por `run_scheduled_notifications`).
+Um passo que falhou não muda o `status` da execução, que continua `succeeded`. Para ver as falhas
+dos passos:
+
+```sql
+SELECT function_name, sqlstate, message, failed_at
+FROM public.scheduled_notification_failures
+WHERE failed_at > now() - interval '7 days'
+ORDER BY failed_at DESC;
+```
+
 O job tem limite de 5 minutos (`statement_timeout` no comando do cron). Se a execução inteira passar
 disso, ela é cancelada, aparece como `failed` e nada do que os passos gravaram fica; no dia
 seguinte eles rodam de novo. Nomes em `scheduled_notification_steps` são só o nome da função, sem

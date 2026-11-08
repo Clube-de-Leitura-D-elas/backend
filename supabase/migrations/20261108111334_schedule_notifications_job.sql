@@ -28,11 +28,35 @@ TO service_role;
 
 ALTER TABLE public.scheduled_notification_steps ENABLE ROW LEVEL SECURITY;
 
+-- Uma linha por passo que falhou em cada execução. O job continua "succeeded"
+-- em cron.job_run_details quando um passo falha, e ninguém olha o log do
+-- Postgres por conta própria: sem esta tabela, um lembrete pode passar semanas
+-- sem sair. function_name não tem FK para scheduled_notification_steps, para
+-- o histórico ficar mesmo depois que o passo é removido. Cresce no máximo uma
+-- linha por passo falho por dia, então não há limpeza por enquanto.
+CREATE TABLE public.scheduled_notification_failures (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  function_name text NOT NULL,
+  sqlstate text NOT NULL,
+  message text NOT NULL,
+  failed_at timestamp with time zone NOT NULL DEFAULT now()
+);
+
+CREATE INDEX scheduled_notification_failures_failed_at_idx
+  ON public.scheduled_notification_failures (failed_at DESC);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.scheduled_notification_failures
+TO service_role;
+
+ALTER TABLE public.scheduled_notification_failures ENABLE ROW LEVEL SECURITY;
+
 -- Cada passo roda no seu próprio bloco BEGIN ... EXCEPTION: se falhar, só o
--- que ele gravou é desfeito, o erro vai para o log do Postgres como WARNING e
--- os passos seguintes rodam. Por isso o job aparece como "succeeded" em
--- cron.job_run_details mesmo com passo falho; a falha fica no log. Passo
--- registrado cuja função não existe falha do mesmo jeito, sem parar os outros.
+-- que ele gravou é desfeito, a falha é gravada em
+-- scheduled_notification_failures (e no log do Postgres como WARNING) e os
+-- passos seguintes rodam. Passo registrado cuja função não existe falha do
+-- mesmo jeito, sem parar os outros. Se a execução inteira estourar o
+-- statement_timeout do job, tudo é desfeito, inclusive as falhas gravadas
+-- nela; esse caso aparece como "failed" em cron.job_run_details.
 CREATE OR REPLACE FUNCTION public.run_scheduled_notifications()
 RETURNS void
 LANGUAGE plpgsql
@@ -52,6 +76,10 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
       RAISE WARNING 'run_scheduled_notifications %: % (%)',
         step, SQLERRM, SQLSTATE;
+
+      INSERT INTO public.scheduled_notification_failures
+        (function_name, sqlstate, message)
+      VALUES (step, SQLSTATE, SQLERRM);
     END;
   END LOOP;
 END;
