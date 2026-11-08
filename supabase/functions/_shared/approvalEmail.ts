@@ -1,4 +1,4 @@
-import { Resend } from "npm:resend@4.0.0";
+import { type EmailResult, sendEmail } from "./email.ts";
 
 export type ApprovalEmail = {
   to: string;
@@ -6,34 +6,21 @@ export type ApprovalEmail = {
   claimToken: string;
 };
 
-export type ApprovalEmailResult = { sent: true } | {
-  sent: false;
-  error: string;
-};
-
 /**
- * Envia o e-mail que avisa da aprovação e entrega o código de ativação.
+ * Monta o e-mail que avisa da aprovação e entrega o código de ativação.
  *
- * As variáveis são lidas na chamada, não na importação: sem `RESEND_API_KEY`
- * ou `EMAIL_FROM` o envio falha com um motivo logável, e quem chamou desfaz a
- * aprovação — a aprovação é tudo-ou-nada.
+ * O envio fica em `_shared/email.ts`: em produção sai pelo Resend, em
+ * desenvolvimento cai no Mailpit. Falhar aqui é motivo para desfazer a
+ * aprovação — o fluxo é tudo-ou-nada.
  */
 export async function sendApprovalEmail(
   email: ApprovalEmail,
-): Promise<ApprovalEmailResult> {
-  const apiKey = Deno.env.get("RESEND_API_KEY");
-  const from = Deno.env.get("EMAIL_FROM");
-  if (!apiKey) {
-    return { sent: false, error: "RESEND_API_KEY is not configured" };
-  }
-  if (!from) return { sent: false, error: "EMAIL_FROM is not configured" };
-
+): Promise<EmailResult> {
   // O nome vem do Google Forms: escapar evita que um `<` no nome quebre o HTML.
   const name = escapeHtml(email.name);
 
-  const { error } = await new Resend(apiKey).emails.send({
-    from,
-    to: [email.to],
+  return await sendEmail({
+    to: email.to,
     subject: "Seu cadastro foi aprovado! 🎉",
     text: [
       `Olá ${email.name},`,
@@ -51,9 +38,6 @@ export async function sendApprovalEmail(
       <p>Abra o aplicativo, faça login com sua conta Google e insira o Token de Acesso acima para vincular o seu perfil.</p>
     `,
   });
-
-  if (error) return { sent: false, error: error.message ?? String(error) };
-  return { sent: true };
 }
 
 const HTML_ENTITIES: Record<string, string> = {

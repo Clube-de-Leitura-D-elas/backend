@@ -69,8 +69,14 @@ Algumas funções dependem de chaves externas para funcionar localmente. Crie o 
 ```env
 GOOGLE_PLACES_API_KEY=<sua chave da Google Places API>
 GOOGLE_BOOKS_API_KEY=<sua chave da Google Books API>
-RESEND_API_KEY=<sua chave da Resend>
-EMAIL_FROM=<remetente verificado na Resend>
+
+# E-mail do fluxo de aprovação. Em desenvolvimento, `mailpit` entrega no
+# Mailpit do próprio `supabase start` — não precisa de chave.
+EMAIL_DRIVER=mailpit
+EMAIL_FROM=nao-responda@clubedeleitura.local
+# Em produção o driver é `resend` (default) e exige:
+# RESEND_API_KEY=<sua chave da Resend>
+# EMAIL_FROM=<remetente verificado na Resend>
 ```
 
 > A `GOOGLE_PLACES_API_KEY` é usada pelas funções `search-places` e `update-meeting` para
@@ -87,12 +93,18 @@ EMAIL_FROM=<remetente verificado na Resend>
 > 3. Em **Credenciais → Criar credenciais → Chave de API**, restrinja a chave à **Books API**.
 > 4. Coloque a chave no `supabase/functions/.env.local`. Nunca commite a chave.
 >
-> A `RESEND_API_KEY` e a `EMAIL_FROM` são usadas pelo helper `_shared/approvalEmail.ts`, que envia
-> o e-mail de aprovação da solicitação (`accept-pending-user`). A aprovação é **tudo-ou-nada**:
-> sem essas variáveis (ou com o Resend fora do ar) o envio falha, a aprovação é desfeita e a rota
-> responde 500 — a solicitação continua pendente no painel. Para testar o envio de verdade, use
-> uma chave da [Resend](https://resend.com) e um remetente verificado; para testar sem enviar
-> e-mail, aponte `RESEND_BASE_URL` para um mock local (o SDK do Resend respeita essa variável).
+> O envio de e-mail passa por `_shared/email.ts`, que escolhe o canal por `EMAIL_DRIVER`:
+>
+> - `resend` (default, produção): exige `RESEND_API_KEY` e `EMAIL_FROM`, com remetente verificado
+>   na [Resend](https://resend.com).
+> - `mailpit` (desenvolvimento): entrega no **Mailpit que o `supabase start` já sobe**, sem chave.
+>   A mensagem aparece em `http://127.0.0.1:54324`, junto dos e-mails do Auth — é onde se lê o
+>   código de ativação. O hostname usado é interno do stack (`supabase_inbucket_backend:8025`),
+>   porque as functions rodam em container; para apontar para outro lugar, use `MAILPIT_URL`.
+>
+> A aprovação é **tudo-ou-nada**: se o canal falhar (chave inválida, Mailpit fora do ar), o envio
+> falha, a aprovação é desfeita e a rota responde 500 — a solicitação continua pendente no painel.
+> Ou seja: em dev, sem `EMAIL_DRIVER=mailpit` e sem chave do Resend, não se aprova.
 
 ```bash
 # Sobe as edge functions com as variáveis de ambiente locais
