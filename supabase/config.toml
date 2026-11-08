@@ -661,6 +661,11 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/search-books/deno.json"
 
+[functions.accept-pending-user]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/accept-pending-user/index.ts"
+
 [functions.get-dashboard-registrations-web]
 enabled = true
 verify_jwt = true
