@@ -15,6 +15,11 @@ const DEFAULT_FROM = "nao-responda@clubedeleitura.local";
 // do stack, que é onde as functions rodam; da máquina, a UI é 127.0.0.1:54324.
 const DEFAULT_MAILPIT_URL = "http://supabase_inbucket_backend:8025";
 
+// Prazo do envio. Sem ele, um provedor que aceita a conexão e não responde
+// prende a rota depois que a aprovação já foi gravada: nem resposta, nem
+// desfazer, e o retry seguinte só devolve "já aprovada".
+const SEND_TIMEOUT_MS = 10_000;
+
 /**
  * Envia um e-mail pelo canal escolhido em `EMAIL_DRIVER`:
  *
@@ -50,13 +55,19 @@ async function sendWithResend(email: Email): Promise<EmailResult> {
   const from = Deno.env.get("EMAIL_FROM");
   if (!from) return { sent: false, error: "EMAIL_FROM is not configured" };
 
-  const { error } = await new Resend(apiKey).emails.send({
-    from,
-    to: [email.to],
-    subject: email.subject,
-    text: email.text,
-    html: email.html,
-  });
+  // O SDK (v4) não aceita timeout nem signal, então a espera é limitada por
+  // corrida. A requisição em voo não é abortada: se ela vencer depois, o e-mail
+  // pode chegar com um código que já foi desfeito — o fluxo é at-most-once.
+  const { error } = await withTimeout(
+    new Resend(apiKey).emails.send({
+      from,
+      to: [email.to],
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
+    }),
+    SEND_TIMEOUT_MS,
+  );
 
   if (error) return { sent: false, error: error.message ?? String(error) };
   return { sent: true };
@@ -72,6 +83,7 @@ async function sendWithMailpit(email: Email): Promise<EmailResult> {
   const response = await fetch(`${baseUrl}/api/v1/send`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     body: JSON.stringify({
       From: { Email: from },
       To: [{ Email: email.to }],
@@ -86,4 +98,21 @@ async function sendWithMailpit(email: Email): Promise<EmailResult> {
   }
 
   return { sent: true };
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`email send timed out after ${ms}ms`)),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
