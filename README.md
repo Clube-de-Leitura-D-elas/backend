@@ -210,6 +210,63 @@ desse encontro.
 
 Referência: CLU-296, que criou esta base (`create_notification`, `dedup_key` e `unread_count`).
 
+### Lembretes agendados
+
+Lembretes que dependem de tempo ("encontro amanhã", "ainda sem local") rodam pelo job
+`run-scheduled-notifications` do pg_cron, todo dia às 09:00 de São Paulo (`0 12 * * *` em UTC). O
+job chama `public.run_scheduled_notifications()`, que executa cada passo registrado em
+`public.scheduled_notification_steps`, em ordem alfabética.
+
+Para adicionar um lembrete, na migration da story:
+
+1. Crie uma função SQL sem argumentos, por exemplo `public.notify_meeting_reminders()`, que
+   decide quem recebe e chama `create_notification` com `dedup_key`. Ela roda todo dia: a chave é o
+   que impede o aviso de duplicar quando o job roda de novo.
+2. Registre o passo:
+
+   ```sql
+   INSERT INTO public.scheduled_notification_steps (function_name)
+   VALUES ('notify_meeting_reminders');
+   ```
+
+Não recrie `run_scheduled_notifications` para adicionar a chamada: duas stories em paralelo
+apagariam o passo uma da outra. Cada passo roda isolado: se falhar, o que ele gravou é desfeito, a
+falha é gravada em `public.scheduled_notification_failures` (e no log do Postgres como
+`WARNING run_scheduled_notifications <passo>: ...`) e os outros passos rodam normalmente.
+
+Para rodar o job na mão (SQL Editor do Studio ou `psql`):
+
+```sql
+SELECT public.run_scheduled_notifications();
+```
+
+Para conferir o agendamento e as últimas execuções:
+
+```sql
+SELECT jobid, jobname, schedule, active FROM cron.job;
+
+SELECT status, return_message, start_time, end_time
+FROM cron.job_run_details
+WHERE jobid = (SELECT jobid FROM cron.job WHERE jobname = 'run-scheduled-notifications')
+ORDER BY start_time DESC
+LIMIT 10;
+```
+
+Um passo que falhou não muda o `status` da execução, que continua `succeeded`. Para ver as falhas
+dos passos:
+
+```sql
+SELECT function_name, sqlstate, message, failed_at
+FROM public.scheduled_notification_failures
+WHERE failed_at > now() - interval '7 days'
+ORDER BY failed_at DESC;
+```
+
+O job tem limite de 5 minutos (`statement_timeout` no comando do cron). Se a execução inteira passar
+disso, ela é cancelada, aparece como `failed` e nada do que os passos gravaram fica; no dia
+seguinte eles rodam de novo. Nomes em `scheduled_notification_steps` são só o nome da função, sem
+schema (`notify_meeting_reminders`, não `public.notify_meeting_reminders`).
+
 ---
 
 ## 🔐 Segredos
