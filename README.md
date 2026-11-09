@@ -69,6 +69,14 @@ Algumas funções dependem de chaves externas para funcionar localmente. Crie o 
 ```env
 GOOGLE_PLACES_API_KEY=<sua chave da Google Places API>
 GOOGLE_BOOKS_API_KEY=<sua chave da Google Books API>
+
+# E-mail do fluxo de aprovação. Em desenvolvimento, `mailpit` entrega no
+# Mailpit do próprio `supabase start` — não precisa de chave.
+EMAIL_DRIVER=mailpit
+EMAIL_FROM=nao-responda@clubedeleitura.local
+# Em produção o driver é `resend` (default) e exige:
+# RESEND_API_KEY=<sua chave da Resend>
+# EMAIL_FROM=<remetente verificado na Resend>
 ```
 
 > A `GOOGLE_PLACES_API_KEY` é usada pelas funções `search-places` e `update-meeting` para
@@ -84,6 +92,19 @@ GOOGLE_BOOKS_API_KEY=<sua chave da Google Books API>
 > 2. Em **APIs e serviços → Biblioteca**, ative a **Books API**.
 > 3. Em **Credenciais → Criar credenciais → Chave de API**, restrinja a chave à **Books API**.
 > 4. Coloque a chave no `supabase/functions/.env.local`. Nunca commite a chave.
+>
+> O envio de e-mail passa por `_shared/email.ts`, que escolhe o canal por `EMAIL_DRIVER`:
+>
+> - `resend` (default, produção): exige `RESEND_API_KEY` e `EMAIL_FROM`, com remetente verificado
+>   na [Resend](https://resend.com).
+> - `mailpit` (desenvolvimento): entrega no **Mailpit que o `supabase start` já sobe**, sem chave.
+>   A mensagem aparece em `http://127.0.0.1:54324`, junto dos e-mails do Auth — é onde se lê o
+>   código de ativação. O hostname usado é interno do stack (`supabase_inbucket_backend:8025`),
+>   porque as functions rodam em container; para apontar para outro lugar, use `MAILPIT_URL`.
+>
+> A aprovação é **tudo-ou-nada**: se o canal falhar (chave inválida, Mailpit fora do ar), o envio
+> falha, a aprovação é desfeita e a rota responde 500 — a solicitação continua pendente no painel.
+> Ou seja: em dev, sem `EMAIL_DRIVER=mailpit` e sem chave do Resend, não se aprova.
 
 ```bash
 # Sobe as edge functions com as variáveis de ambiente locais
@@ -209,9 +230,9 @@ Para adicionar um lembrete, na migration da story:
    ```
 
 Não recrie `run_scheduled_notifications` para adicionar a chamada: duas stories em paralelo
-apagariam o passo uma da outra. Cada passo roda isolado: se falhar, o que ele gravou é desfeito, o
-erro vai para o log do Postgres como `WARNING run_scheduled_notifications <passo>: ...` e os outros
-passos rodam normalmente.
+apagariam o passo uma da outra. Cada passo roda isolado: se falhar, o que ele gravou é desfeito, a
+falha é gravada em `public.scheduled_notification_failures` (e no log do Postgres como
+`WARNING run_scheduled_notifications <passo>: ...`) e os outros passos rodam normalmente.
 
 Para rodar o job na mão (SQL Editor do Studio ou `psql`):
 
@@ -231,8 +252,16 @@ ORDER BY start_time DESC
 LIMIT 10;
 ```
 
-Um passo que falhou não muda o `status` da execução, que continua `succeeded`. A falha aparece só
-no log do Postgres (no dashboard, **Logs → Postgres**, buscando por `run_scheduled_notifications`).
+Um passo que falhou não muda o `status` da execução, que continua `succeeded`. Para ver as falhas
+dos passos:
+
+```sql
+SELECT function_name, sqlstate, message, failed_at
+FROM public.scheduled_notification_failures
+WHERE failed_at > now() - interval '7 days'
+ORDER BY failed_at DESC;
+```
+
 O job tem limite de 5 minutos (`statement_timeout` no comando do cron). Se a execução inteira passar
 disso, ela é cancelada, aparece como `failed` e nada do que os passos gravaram fica; no dia
 seguinte eles rodam de novo. Nomes em `scheduled_notification_steps` são só o nome da função, sem
@@ -249,6 +278,8 @@ Nenhuma chave do Supabase é commitada. As credenciais ficam no **GitHub Secrets
 | Credenciais Supabase | GitHub Secrets | `.env` do app mobile |
 | `GOOGLE_PLACES_API_KEY` | `npx supabase secrets set GOOGLE_PLACES_API_KEY=...` | `supabase/functions/.env.local` |
 | `GOOGLE_BOOKS_API_KEY` | `npx supabase secrets set GOOGLE_BOOKS_API_KEY=...` | `supabase/functions/.env.local` |
+| `RESEND_API_KEY` | `npx supabase secrets set RESEND_API_KEY=...` | `supabase/functions/.env.local` |
+| `EMAIL_FROM` | `npx supabase secrets set EMAIL_FROM=...` | `supabase/functions/.env.local` |
 
 ---
 

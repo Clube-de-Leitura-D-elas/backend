@@ -83,11 +83,10 @@ não está formatado e o diretório inteiro geraria um diff enorme.
   `[functions.<nome>]` no `config.toml` com `enabled = true`, `verify_jwt = true` e `import_map`.
   Functions usadas só pelo painel web terminam em `-web`.
 - Use `withSupabase<Database>({ auth: "user" }, ...)`. Algumas functions antigas são chamadas por
-  trigger, link de e-mail ou serviço externo e não usam autenticação de usuário
-  (`approve-user`, `approve-pending-user`, `send-user-to-approval`, `claim-user-profile`,
-  `email-confirmed`, `process-google-form`). Cada uma se autentica de um jeito diferente, e nem
-  todas de forma suficiente: não as use como modelo. Function nova sem `auth: "user"` precisa
-  explicar no PR como garante quem pode chamá-la, e quem revisa confere isso no código.
+  serviço externo e não usam autenticação de usuário (`claim-user-profile`, `email-confirmed`,
+  `process-google-form`). Cada uma se autentica de um jeito diferente, e nem todas de forma
+  suficiente: não as use como modelo. Function nova sem `auth: "user"` precisa explicar no PR como
+  garante quem pode chamá-la, e quem revisa confere isso no código.
 - Siga esta ordem: método HTTP (405) → leitura e validação da entrada (400) → autorização
   (401/403) → existência do recurso (404) → trabalho.
 - Valide entrada com os helpers de `_shared/` (`isUuid`, `readGroupIdParam`, `readMeetingIdParam`,

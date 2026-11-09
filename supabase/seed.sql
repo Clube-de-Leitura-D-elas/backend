@@ -612,4 +612,30 @@ INSERT INTO public.pending_users (id, created_at, name, email, phone_number, is_
     '(51) 98888-1003', true, 'seed-claim-token-used', now() - interval '4 days', now() - interval '3 days', '1985-11-06', 'Jornalista', 'MASTERS', 'renata.almeida', 'Quarto de Despejo')
 ON CONFLICT (id) DO NOTHING;
 
+-- Histórico de inscrições para o gráfico "Novas inscrições" do dashboard
+-- (CLU-249): envios espalhados pelo último ano, já aprovados e usados para não
+-- aparecerem na lista de solicitações pendentes. O mês de 5 meses atrás e a
+-- semana de 3 semanas atrás ficam sem inscrição de propósito (total 0).
+INSERT INTO public.pending_users (id, created_at, name, email, phone_number, is_approved, claim_token, token_used_at, claim_token_expires_at, birthday)
+SELECT pg_temp.sid('pending_user', 'hist-' || h.n),
+       h.created_at,
+       'Inscrita Histórica ' || h.n,
+       'inscrita.historica.' || h.n || '@example.com',
+       '(51) 97777-' || lpad(h.n::text, 4, '0'),
+       true,
+       NULL,
+       least(h.created_at + interval '3 days', now()),
+       NULL,
+       date '1980-01-01' + (h.n * 97 % 9000)
+FROM (
+  SELECT n,
+         now() - make_interval(days => (n * 53) % 360, hours => (n * 7) % 24) AS created_at
+  FROM generate_series(1, 80) AS n
+) h
+WHERE date_trunc('month', h.created_at AT TIME ZONE 'America/Sao_Paulo')
+        <> date_trunc('month', (now() - interval '5 months') AT TIME ZONE 'America/Sao_Paulo')
+  AND date_trunc('week', h.created_at AT TIME ZONE 'America/Sao_Paulo')
+        <> date_trunc('week', (now() - interval '3 weeks') AT TIME ZONE 'America/Sao_Paulo')
+ON CONFLICT (id) DO NOTHING;
+
 COMMIT;
