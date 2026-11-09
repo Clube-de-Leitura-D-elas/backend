@@ -16,7 +16,7 @@ AS $$
 DECLARE
   pending_user public.pending_users;
   resolved_city_id uuid;
-  zone_id uuid;
+  resolved_zone_id uuid;
   new_user_id uuid;
   education_level public.levels_of_education;
 BEGIN
@@ -33,7 +33,9 @@ BEGIN
   END IF;
 
   IF pending_user.is_approved IS NOT TRUE OR
-    pending_user.token_used_at IS NOT NULL THEN
+    pending_user.token_used_at IS NOT NULL OR
+    pending_user.claim_token_expires_at IS NULL OR
+    pending_user.claim_token_expires_at <= now() THEN
     RAISE EXCEPTION USING
       ERRCODE = 'CL001',
       MESSAGE = 'claim token is invalid or already used';
@@ -60,7 +62,7 @@ BEGIN
 
   IF coalesce(pending_user.zone, '') <> '' AND resolved_city_id IS NOT NULL THEN
     SELECT id
-    INTO zone_id
+    INTO resolved_zone_id
     FROM public.zones
     WHERE name ILIKE pending_user.zone
       AND public.zones.city_id = resolved_city_id
@@ -69,7 +71,7 @@ BEGIN
     IF NOT FOUND THEN
       INSERT INTO public.zones (name, city_id)
       VALUES (pending_user.zone, resolved_city_id)
-      RETURNING id INTO zone_id;
+      RETURNING id INTO resolved_zone_id;
     END IF;
   END IF;
 
@@ -110,7 +112,7 @@ BEGIN
     education_level,
     coalesce(pending_user.instagram_user, ''),
     resolved_city_id,
-    zone_id,
+    resolved_zone_id,
     true,
     p_user_id
   )
@@ -123,7 +125,7 @@ BEGIN
       MESSAGE = 'user profile already exists';
   END IF;
 
-  IF pending_user.book_name IS NOT NULL THEN
+  IF coalesce(pending_user.book_name, '') <> '' THEN
     INSERT INTO public.onboarding_book_suggestions (name, user_id)
     VALUES (pending_user.book_name, new_user_id);
   END IF;
