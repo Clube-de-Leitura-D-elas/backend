@@ -4,4 +4,3 @@
 -- criado. Valor de enum não sai mais do banco depois do deploy.
 ALTER TYPE public.notification_type
   ADD VALUE IF NOT EXISTS 'ATTENDANCE_CONFIRMATION_REMINDER';
-  
