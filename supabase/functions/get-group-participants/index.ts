@@ -69,7 +69,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .select("id, host_id, date, status")
     .eq("group_id", groupId)
     .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
-    .or(`date.gte.${currentIso},status.eq.IN_PROGRESS,status.eq.CREATED`)
+    .or(
+      `date.gte.${currentIso},status.eq.IN_PROGRESS,and(status.eq.CREATED,date.is.null)`,
+    )
     .order("date", { ascending: true, nullsFirst: false })
     .order("id", { ascending: true });
 
