@@ -45,7 +45,8 @@ BEGIN
     SELECT id
     INTO resolved_city_id
     FROM public.cities
-    WHERE name ILIKE pending_user.city
+    WHERE lower(btrim(name)) = lower(btrim(pending_user.city))
+    ORDER BY id
     LIMIT 1;
 
     IF NOT FOUND THEN
@@ -63,8 +64,9 @@ BEGIN
     SELECT id
     INTO resolved_zone_id
     FROM public.zones
-    WHERE name ILIKE pending_user.zone
+    WHERE lower(btrim(name)) = lower(btrim(pending_user.zone))
       AND public.zones.city_id = resolved_city_id
+    ORDER BY id
     LIMIT 1;
 
     IF NOT FOUND THEN
