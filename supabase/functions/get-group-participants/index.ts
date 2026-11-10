@@ -70,7 +70,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .eq("group_id", groupId)
     .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
     .or(
-      `date.gte.${currentIso},status.eq.IN_PROGRESS,and(status.eq.CREATED,date.is.null)`,
+      `date.gte.${currentIso},status.eq.IN_PROGRESS,status.eq.SCHEDULED,and(status.eq.CREATED,date.is.null)`,
     )
     .order("date", { ascending: true, nullsFirst: false })
     .order("id", { ascending: true });
@@ -88,11 +88,15 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const nowMs = Date.parse(currentIso);
   const meetings = (meetingsData ?? []) as unknown as CurrentMeetingRow[];
-  const activeOrUpcomingMeeting = meetings.find(
-    (meeting) =>
-      meeting.status === "IN_PROGRESS" ||
-      isFutureOrNowInstant(meeting.date, nowMs),
-  );
+  const activeOrUpcomingMeeting =
+    meetings.find(
+      (meeting) =>
+        meeting.status === "IN_PROGRESS" ||
+        isFutureOrNowInstant(meeting.date, nowMs),
+    ) ??
+    meetings.findLast(
+      (meeting) => meeting.status === "SCHEDULED" && meeting.date !== null,
+    );
   const draftMeeting = meetings.find(
     (meeting) => meeting.status === "CREATED" && !meeting.date,
   );
