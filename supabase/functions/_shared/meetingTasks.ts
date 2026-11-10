@@ -26,26 +26,51 @@ export function hasStarted(
     Date.parse(meeting.date) <= now;
 }
 
+const OPEN_MEETING_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
 /**
- * Escolhe o encontro cuja anfitriã deve ser exibida na lista de participantes.
- * Prioridade:
- * 1. Encontro em andamento (`IN_PROGRESS` ou `SCHEDULED` já iniciado via `hasStarted`) ou com data futura (`date >= now`);
- * 2. Rascunho `CREATED` sem data (`date === null`).
+ * Escolhe o encontro atual, nesta ordem:
+ * 1. `IN_PROGRESS`;
+ * 2. `SCHEDULED` já iniciado e ainda não encerrado, o mais recente (até 30 dias após a data);
+ * 3. `SCHEDULED` ou `CREATED` com data futura, o mais próximo;
+ * 4. Rascunho `CREATED` sem data.
+ * Encontros `ENDED` e `CONCLUDED` nunca são escolhidos.
  */
-export function pickHostMeeting<T extends MeetingTiming>(
+export function pickCurrentMeeting<T extends MeetingTiming>(
   meetings: readonly T[],
   now = Date.now(),
 ): T | undefined {
-  return (
-    meetings.find(
-      (meeting) =>
-        hasStarted(meeting, now) ||
-        (meeting.status !== "ENDED" &&
-          meeting.status !== "CONCLUDED" &&
-          isFutureOrNowInstant(meeting.date, now)),
-    ) ??
-      meetings.find((meeting) => meeting.status === "CREATED" && !meeting.date)
+  const open = meetings.filter((meeting) =>
+    meeting.status !== "ENDED" && meeting.status !== "CONCLUDED"
   );
+
+  const inProgress = open.find((meeting) => meeting.status === "IN_PROGRESS");
+  if (inProgress) return inProgress;
+
+  const started = open.filter((meeting) =>
+    hasStarted(meeting, now) &&
+    now - Date.parse(meeting.date ?? "") <= OPEN_MEETING_WINDOW_MS
+  );
+  if (started.length > 0) {
+    return started.reduce((latest, meeting) =>
+      Date.parse(meeting.date ?? "") > Date.parse(latest.date ?? "")
+        ? meeting
+        : latest
+    );
+  }
+
+  const upcoming = open.filter((meeting) =>
+    isFutureOrNowInstant(meeting.date, now)
+  );
+  if (upcoming.length > 0) {
+    return upcoming.reduce((next, meeting) =>
+      Date.parse(meeting.date ?? "") < Date.parse(next.date ?? "")
+        ? meeting
+        : next
+    );
+  }
+
+  return open.find((meeting) => meeting.status === "CREATED" && !meeting.date);
 }
 
 export function canConclude(meeting: MeetingState, now = Date.now()): boolean {

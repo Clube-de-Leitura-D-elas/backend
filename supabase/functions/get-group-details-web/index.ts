@@ -4,6 +4,7 @@ import type { Database } from "../_shared/database.ts";
 import { readGroupIdParam } from "../_shared/group.ts";
 import { readNeighborhood } from "../_shared/location.ts";
 import { oneLine } from "../_shared/log.ts";
+import { pickCurrentMeeting } from "../_shared/meetingTasks.ts";
 import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 import { requireRole } from "../_shared/role.ts";
 
@@ -104,10 +105,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       .eq("group_id", groupId)
       .in("status", OPEN_STATUSES)
       .not("date", "is", null)
-      .or(`date.gte.${new Date().toISOString()},status.eq.IN_PROGRESS`)
-      .order("date", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
+      .order("date", { ascending: true }),
   ]);
 
   const error = countResult.error ?? coordinatorResult.error ??
@@ -121,9 +119,12 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "unable to load group" }, { status: 500 });
   }
 
-  const coordinatorRows = (coordinatorResult.data ?? []) as unknown as
-    CoordinatorRow[];
-  const meeting = meetingResult.data as unknown as NextMeetingRow | null;
+  const coordinatorRows =
+    (coordinatorResult.data ?? []) as unknown as CoordinatorRow[];
+  const meeting = pickCurrentMeeting(
+    (meetingResult.data ?? []) as unknown as NextMeetingRow[],
+    Date.now(),
+  );
 
   const resolvePhotoUrl = await resolveProfilePhotoUrls(
     ctx,

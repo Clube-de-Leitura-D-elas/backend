@@ -4,7 +4,7 @@ import type { Database } from "../_shared/database.ts";
 import { nowIso } from "../_shared/date.ts";
 import { readGroupIdParam, requireGroupMember } from "../_shared/group.ts";
 import { oneLine } from "../_shared/log.ts";
-import { pickHostMeeting } from "../_shared/meetingTasks.ts";
+import { pickCurrentMeeting } from "../_shared/meetingTasks.ts";
 import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 
 type GroupUserRow = {
@@ -40,9 +40,12 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (groupError) {
     console.error(
       "get-group-participants group error",
-      groupError.message.replace(/[\r\n]/g, " "),
+      oneLine(groupError.message),
     );
-    return Response.json({ error: groupError.message }, { status: 500 });
+    return Response.json(
+      { error: "Unable to load group participants" },
+      { status: 500 },
+    );
   }
 
   if (!group) {
@@ -59,9 +62,12 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (error) {
     console.error(
       "get-group-participants error",
-      error.message.replace(/[\r\n]/g, " "),
+      oneLine(error.message),
     );
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json(
+      { error: "Unable to load group participants" },
+      { status: 500 },
+    );
   }
 
   const currentIso = nowIso();
@@ -71,9 +77,6 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .select("id, host_id, date, status")
     .eq("group_id", groupId)
     .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
-    .or(
-      `date.gte.${currentIso},status.eq.IN_PROGRESS,status.eq.SCHEDULED,and(status.eq.CREATED,date.is.null)`,
-    )
     .order("date", { ascending: true, nullsFirst: false })
     .order("id", { ascending: true });
 
@@ -89,7 +92,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const meetings = (meetingsData ?? []) as unknown as CurrentMeetingRow[];
-  const currentHostGroupUserId = pickHostMeeting(meetings, nowMs)?.host_id ??
+  const currentHostGroupUserId = pickCurrentMeeting(meetings, nowMs)?.host_id ??
     null;
 
   const rows = (data ?? []) as unknown as GroupUserRow[];

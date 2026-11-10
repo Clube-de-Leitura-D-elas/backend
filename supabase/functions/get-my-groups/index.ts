@@ -2,7 +2,11 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { oneLine } from "../_shared/log.ts";
-import { countDoneTasks, TASKS_TOTAL } from "../_shared/meetingTasks.ts";
+import {
+  countDoneTasks,
+  pickCurrentMeeting,
+  TASKS_TOTAL,
+} from "../_shared/meetingTasks.ts";
 
 type MembershipRow = {
   id: string;
@@ -117,17 +121,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     });
   }
 
-  const upcomingMeetingByGroupId = new Map<string, MeetingRow>();
+  const meetingsByGroupId = new Map<string, MeetingRow[]>();
   const pendingMeetingsByGroupId = new Map<string, MeetingRow[]>();
   const now = Date.now();
   for (const meeting of (meetingData ?? []) as unknown as MeetingRow[]) {
     const membership = membershipByGroupId.get(meeting.group_id);
-    if (
-      !upcomingMeetingByGroupId.has(meeting.group_id) &&
-      isUpcoming(meeting, now)
-    ) {
-      upcomingMeetingByGroupId.set(meeting.group_id, meeting);
-    }
+    const sameGroup = meetingsByGroupId.get(meeting.group_id);
+    if (sameGroup) sameGroup.push(meeting);
+    else meetingsByGroupId.set(meeting.group_id, [meeting]);
 
     if (
       canManageTasks(membership, meeting) &&
@@ -152,7 +153,10 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
       const city = group.cities;
       const membership = membershipByGroupId.get(group.id);
       const pendingMeetings = pendingMeetingsByGroupId.get(group.id) ?? [];
-      const upcomingMeeting = upcomingMeetingByGroupId.get(group.id);
+      const upcomingMeeting = pickNextMeeting(
+        meetingsByGroupId.get(group.id) ?? [],
+        now,
+      );
       return {
         id: group.id,
         number: group.number,
@@ -206,9 +210,13 @@ function canManageTasks(
   );
 }
 
-function isUpcoming(meeting: MeetingRow, now: number): boolean {
-  if (meeting.status === "IN_PROGRESS") return true;
-  // Rascunhos CREATED sem data ficam de fora; com data, já são o próximo evento.
-  if (meeting.status === "ENDED" || !meeting.date) return false;
-  return Date.parse(meeting.date) >= now;
+function pickNextMeeting(
+  meetings: MeetingRow[],
+  now: number,
+): MeetingRow | undefined {
+  // Rascunhos CREATED sem data não viram próximo evento.
+  return pickCurrentMeeting(
+    meetings.filter((meeting) => meeting.date !== null),
+    now,
+  );
 }
