@@ -1,8 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { oneLine } from "../_shared/log.ts";
 
 const INVALID_TOKEN = "CL001";
 const USER_ALREADY_EXISTS = "CL002";
+const INVALID_PENDING_USER = "CL003";
 
 serve(async (req) => {
   let body: Record<string, unknown> | null;
@@ -56,7 +58,14 @@ serve(async (req) => {
         status: 409
       });
     }
-    console.error("RPC error:", claimError);
+    if (claimError.code === INVALID_PENDING_USER) {
+      return new Response(JSON.stringify({
+        error: 'Não foi possível concluir o cadastro'
+      }), {
+        status: 400
+      });
+    }
+    console.error("claim-user-profile rpc claim_user_profile", oneLine(claimError.message));
     return new Response(JSON.stringify({
       error: 'Não foi possível concluir o cadastro'
     }), {

@@ -54,10 +54,9 @@ BEGIN
       RETURNING id INTO resolved_city_id;
     END IF;
   ELSE
-    SELECT id
-    INTO resolved_city_id
-    FROM public.cities
-    LIMIT 1;
+    RAISE EXCEPTION USING
+      ERRCODE = 'CL003',
+      MESSAGE = 'pending user city is required';
   END IF;
 
   IF coalesce(pending_user.zone, '') <> '' AND resolved_city_id IS NOT NULL THEN
