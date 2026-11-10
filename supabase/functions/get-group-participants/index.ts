@@ -1,9 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
-import { isFutureOrNowInstant, nowIso } from "../_shared/date.ts";
+import { nowIso } from "../_shared/date.ts";
 import { readGroupIdParam, requireGroupMember } from "../_shared/group.ts";
 import { oneLine } from "../_shared/log.ts";
+import { pickHostMeeting } from "../_shared/meetingTasks.ts";
 import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 
 type GroupUserRow = {
@@ -64,6 +65,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const currentIso = nowIso();
+  const nowMs = Date.parse(currentIso);
   const { data: meetingsData, error: meetingsError } = await ctx.supabaseAdmin
     .from("meetings")
     .select("id, host_id, date, status")
@@ -86,22 +88,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     );
   }
 
-  const nowMs = Date.parse(currentIso);
   const meetings = (meetingsData ?? []) as unknown as CurrentMeetingRow[];
-  const activeOrUpcomingMeeting =
-    meetings.find(
-      (meeting) =>
-        meeting.status === "IN_PROGRESS" ||
-        isFutureOrNowInstant(meeting.date, nowMs),
-    ) ??
-    meetings.findLast(
-      (meeting) => meeting.status === "SCHEDULED" && meeting.date !== null,
-    );
-  const draftMeeting = meetings.find(
-    (meeting) => meeting.status === "CREATED" && !meeting.date,
-  );
-  const currentHostGroupUserId =
-    (activeOrUpcomingMeeting ?? draftMeeting)?.host_id ?? null;
+  const currentHostGroupUserId = pickHostMeeting(meetings, nowMs)?.host_id ??
+    null;
 
   const rows = (data ?? []) as unknown as GroupUserRow[];
 
