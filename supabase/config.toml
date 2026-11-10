@@ -188,7 +188,7 @@ enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
-minimum_password_length = 6
+minimum_password_length = 8
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
 password_requirements = ""
@@ -670,3 +670,84 @@ entrypoint = "./functions/accept-pending-user/index.ts"
 enabled = true
 verify_jwt = true
 import_map = "./functions/get-dashboard-registrations-web/deno.json"
+
+[functions.claim-user-profile]
+enabled = true
+verify_jwt = true
+import_map = "./functions/claim-user-profile/deno.json"
+
+[functions.process-google-form]
+enabled = true
+verify_jwt = true
+import_map = "./functions/process-google-form/deno.json"
+
+[functions.update-group-participant-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/update-group-participant-web/deno.json"
+
+[functions.update-participant-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/update-participant-web/deno.json"
+
+[functions.get-group-consecutive-absences]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-group-consecutive-absences/index.ts"
+
+[functions.get-meeting-attendance]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-meeting-attendance/index.ts"
+
+[functions.get-participant-filters]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-participant-filters/index.ts"
+
+[functions.get-participant-groups]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-participant-groups/index.ts"
+
+[functions.get-participant-presence]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-participant-presence/index.ts"
+
+[functions.get-participant]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-participant/index.ts"
+
+[functions.get-participants]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-participants/index.ts"
+
+[functions.get-pending-participants]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-pending-participants/index.ts"
+
+[functions.get-user-profile]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-user-profile/index.ts"
+
+[functions.reject-pending-user]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/reject-pending-user/index.ts"
+
+[functions.update-group-location-web]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/update-group-location-web/index.ts"
+
+[functions.update-participant-status]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/update-participant-status/index.ts"
+

@@ -46,7 +46,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { data: profile, error: profileError } = await ctx.supabaseAdmin
     .from("users")
-    .select("id")
+    .select("id, is_active")
     .eq("user_id", authUserId)
     .maybeSingle();
 
@@ -62,12 +62,18 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (!profile) {
     return Response.json({ error: "User profile not found" }, { status: 404 });
   }
+  if (!profile.is_active) {
+    return Response.json({ error: "Forbidden: active user required" }, {
+      status: 403,
+    });
+  }
 
   const { data: membershipData, error: membershipsError } = await ctx
     .supabaseAdmin
     .from("group_users")
     .select("id, group_id")
-    .eq("user_id", profile.id);
+    .eq("user_id", profile.id)
+    .eq("registration_status", "ACTIVE");
 
   if (membershipsError) {
     console.error(

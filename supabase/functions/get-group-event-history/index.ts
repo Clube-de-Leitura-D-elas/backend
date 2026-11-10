@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
-import { readGroupIdParam } from "../_shared/group.ts";
+import { readGroupIdParam, requireGroupMember } from "../_shared/group.ts";
 
 type MeetingRow = {
   id: string;
@@ -13,6 +13,9 @@ type MeetingRow = {
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const groupId = readGroupIdParam(new URL(req.url));
   if (groupId instanceof Response) return groupId;
+
+  const denied = await requireGroupMember(ctx, groupId);
+  if (denied) return denied;
 
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
@@ -29,7 +32,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       "get-group-event-history error",
       error.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Unable to load event history" }, {
+      status: 500,
+    });
   }
 
   const meetings = (data ?? []) as unknown as MeetingRow[];

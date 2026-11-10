@@ -66,7 +66,7 @@ não está formatado e o diretório inteiro geraria um diff enorme.
 - **Tabela nova:** `GRANT` explícito só para `service_role` (o projeto foi criado com a exposição
   automática desligada; veja `20261006130000_grant_data_api_access.sql`) e
   `ENABLE ROW LEVEL SECURITY`. Acesso de `anon`/`authenticated` só com justificativa no PR; hoje
-  apenas `cities`, `zones` e `users` têm leitura para `authenticated`.
+  apenas `cities` e `zones` têm leitura para `authenticated`.
 - **Coluna `NOT NULL` em tabela com dados:** adicione nullable, faça o backfill e só então aplique
   o `NOT NULL`.
 - **`UNIQUE` em tabela com dados:** remova as duplicatas antes, deixando explícito qual linha fica

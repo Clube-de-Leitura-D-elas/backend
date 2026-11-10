@@ -37,7 +37,7 @@ export async function requireExistingGroup(
       "group existence check error",
       error.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Unable to verify group" }, { status: 500 });
   }
 
   if (!group) {
@@ -58,7 +58,7 @@ export async function requireGroupMember(
 export async function requireGroupMemberProfile(
   ctx: SupabaseContext<Database>,
   groupId: string,
-  { activeOnly = false }: { activeOnly?: boolean } = {},
+  { activeOnly = true }: { activeOnly?: boolean } = {},
 ): Promise<{ profileId: string } | Response> {
   const authUserId = ctx.userClaims?.id;
   if (!authUserId) {
@@ -76,7 +76,9 @@ export async function requireGroupMemberProfile(
       "group membership profile error",
       profileError.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: profileError.message }, { status: 500 });
+    return Response.json({ error: "Unable to verify group membership" }, {
+      status: 500,
+    });
   }
 
   if (!profile || (activeOnly && !profile.is_active)) {
@@ -101,7 +103,9 @@ export async function requireGroupMemberProfile(
       "group membership check error",
       membershipError.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: membershipError.message }, { status: 500 });
+    return Response.json({ error: "Unable to verify group membership" }, {
+      status: 500,
+    });
   }
 
   if (!memberships || memberships.length === 0) {
@@ -125,6 +129,7 @@ export async function isGroupCoordinatorOrMeetingHost(
     .select("id")
     .eq("group_id", groupId)
     .eq("user_id", userId)
+    .eq("registration_status", "ACTIVE")
     .or(`is_coordinator.eq.true,id.eq.${hostId}`)
     .maybeSingle();
 
@@ -133,7 +138,9 @@ export async function isGroupCoordinatorOrMeetingHost(
       `${logLabel} membership error`,
       userError.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: userError.message }, { status: 500 });
+    return Response.json({ error: "Unable to verify group membership" }, {
+      status: 500,
+    });
   }
 
   return user !== null;

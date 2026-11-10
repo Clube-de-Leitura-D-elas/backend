@@ -6,6 +6,7 @@ import {
   requireGroupMemberProfile,
 } from "../_shared/group.ts";
 import { readMeetingIdParam } from "../_shared/meeting.ts";
+import { signMeetingPhotos } from "../_shared/meetingPhoto.ts";
 
 const EDITABLE_STATUSES = ["CREATED", "SCHEDULED"];
 
@@ -19,7 +20,11 @@ type MeetingRow = {
   books: { name: string; photos: { url: string } | null };
   locations: { name: string; address: string; google_place_id: string } | null;
   host: { users: { name: string } };
-  meeting_photos: { is_cover: boolean; photos: { url: string } | null }[];
+  meeting_photos: {
+    id: string;
+    is_cover: boolean;
+    photos: { url: string } | null;
+  }[];
 };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
@@ -29,7 +34,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
-      "id, group_id, host_id, date, status, description, books!inner(name, photos(url)), locations(name, address, google_place_id), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_photos(is_cover, photos(url))",
+      "id, group_id, host_id, date, status, description, books!inner(name, photos(url)), locations(name, address, google_place_id), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_photos(id, is_cover, photos(url))",
     )
     .eq("id", meetingId)
     .maybeSingle();
@@ -39,7 +44,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       "get-meeting-details error",
       error.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Unable to load meeting details" }, {
+      status: 500,
+    });
   }
 
   if (!data) {
@@ -80,13 +87,23 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         "get-meeting-details number error",
         countError.message.replace(/[\r\n]/g, " "),
       );
-      return Response.json({ error: countError.message }, { status: 500 });
+      return Response.json({ error: "Unable to load meeting details" }, {
+        status: 500,
+      });
     }
 
     number = count ?? null;
   }
 
   const cover = meeting.meeting_photos.find((photo) => photo.is_cover);
+  let coverPhotoUrl: string | null = null;
+  if (cover?.photos?.url) {
+    const signedCover = await signMeetingPhotos(ctx, req, meeting.id, [
+      { id: cover.id, url: cover.photos.url },
+    ]);
+    if (signedCover instanceof Response) return signedCover;
+    coverPhotoUrl = signedCover[0]?.url ?? null;
+  }
   const description = meeting.description?.trim();
 
   return Response.json({
@@ -95,7 +112,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     date: meeting.date,
     status: meeting.status,
     description: description ? description : null,
-    cover_photo_url: cover?.photos?.url ?? null,
+    cover_photo_url: coverPhotoUrl,
     book_title: meeting.books.name,
     book_cover_url: meeting.books.photos?.url ?? null,
     host_name: meeting.host.users.name,

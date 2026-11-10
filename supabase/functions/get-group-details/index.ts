@@ -32,7 +32,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       "get-group-details error",
       groupError.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: groupError.message }, { status: 500 });
+    return Response.json({ error: "Unable to load group details" }, {
+      status: 500,
+    });
   }
 
   if (!group) {
@@ -41,15 +43,19 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { count: participantCount, error: countError } = await ctx.supabaseAdmin
     .from("group_users")
-    .select("id", { count: "exact", head: true })
-    .eq("group_id", groupId);
+    .select("id, users!inner(is_active)", { count: "exact", head: true })
+    .eq("group_id", groupId)
+    .eq("registration_status", "ACTIVE")
+    .eq("users.is_active", true);
 
   if (countError) {
     console.error(
       "get-group-details participant count error",
       countError.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: countError.message }, { status: 500 });
+    return Response.json({ error: "Unable to load group details" }, {
+      status: 500,
+    });
   }
 
   const typedGroup = group as unknown as GroupRow;

@@ -35,7 +35,7 @@ export async function findMeetingGroupId(
       `${logLabel} meeting error`,
       error.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Unable to load meeting" }, { status: 500 });
   }
 
   if (!data) {
@@ -61,7 +61,7 @@ export async function findMeetingGroupIdAndHostId(
       `${logLabel} meeting error`,
       error.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Unable to load meeting" }, { status: 500 });
   }
 
   if (!data) {

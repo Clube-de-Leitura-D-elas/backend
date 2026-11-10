@@ -24,17 +24,19 @@ export async function requireRole(
 
   const { data: profile, error } = await ctx.supabaseAdmin
     .from("users")
-    .select("app_role")
+    .select("app_role, is_active")
     .eq("user_id", authUserId)
     .maybeSingle();
 
   if (error) {
     console.error(`${scope} check error`, oneLine(error.message));
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Unable to verify user permissions" }, {
+      status: 500,
+    });
   }
 
   const role = profile?.app_role as AppRole | undefined;
-  if (!role || !roles.includes(role)) {
+  if (!profile?.is_active || !role || !roles.includes(role)) {
     return Response.json(
       { error: `Forbidden: ${scope} only` },
       { status: 403 },

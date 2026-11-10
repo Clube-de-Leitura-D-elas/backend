@@ -37,7 +37,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
 
   const { data: profile, error: profileError } = await ctx.supabaseAdmin
     .from("users")
-    .select("id")
+    .select("id, is_active")
     .eq("user_id", authUserId)
     .maybeSingle();
 
@@ -52,12 +52,19 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     return Response.json({ error: "User profile not found" }, { status: 404 });
   }
 
+  if (!profile.is_active) {
+    return Response.json({ error: "Forbidden: active user required" }, {
+      status: 403,
+    });
+  }
+
   const { data, error } = await ctx.supabaseAdmin
     .from("group_users")
     .select(
       "id, is_coordinator, group_id, groups!inner(id, number, cities(name, uf), photos(url))",
     )
     .eq("user_id", profile.id)
+    .eq("registration_status", "ACTIVE")
     .eq("groups.is_active", true)
     .order("group_id");
 
@@ -84,8 +91,10 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
 
   const { data: groupUsers, error: groupUsersError } = await ctx.supabaseAdmin
     .from("group_users")
-    .select("group_id")
-    .in("group_id", groupIds);
+    .select("group_id, users!inner(is_active)")
+    .in("group_id", groupIds)
+    .eq("registration_status", "ACTIVE")
+    .eq("users.is_active", true);
 
   if (groupUsersError) {
     console.error(

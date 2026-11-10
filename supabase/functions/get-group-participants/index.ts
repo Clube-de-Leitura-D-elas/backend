@@ -31,26 +31,32 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       "get-group-participants group error",
       groupError.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: groupError.message }, { status: 500 });
+    return Response.json({ error: "Unable to load group participants" }, {
+      status: 500,
+    });
   }
 
   if (!group) {
     return Response.json({ error: "group not found" }, { status: 404 });
   }
 
-  // Mesmo recorte da contagem de get-group-details (todos os vínculos do
+  // Mesmo recorte da contagem de get-group-details (vínculos e contas ativas do
   // grupo), para o número do título bater com o tamanho da lista.
   const { data, error } = await ctx.supabaseAdmin
     .from("group_users")
     .select("is_coordinator, users!inner(id, name, photos(url))")
-    .eq("group_id", groupId);
+    .eq("group_id", groupId)
+    .eq("registration_status", "ACTIVE")
+    .eq("users.is_active", true);
 
   if (error) {
     console.error(
       "get-group-participants error",
       error.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Unable to load group participants" }, {
+      status: 500,
+    });
   }
 
   const rows = (data ?? []) as unknown as GroupUserRow[];

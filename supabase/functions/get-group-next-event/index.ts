@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
-import { readGroupIdParam } from "../_shared/group.ts";
+import { readGroupIdParam, requireGroupMember } from "../_shared/group.ts";
 
 type MeetingRow = {
   id: string;
@@ -16,6 +16,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const groupId = readGroupIdParam(new URL(req.url));
   if (groupId instanceof Response) return groupId;
 
+  const denied = await requireGroupMember(ctx, groupId);
+  if (denied) return denied;
+
   const { data: group, error: groupError } = await ctx.supabaseAdmin
     .from("groups")
     .select("id")
@@ -27,7 +30,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       "get-group-next-event group error",
       groupError.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: groupError.message }, { status: 500 });
+    return Response.json({ error: "Unable to load next event" }, {
+      status: 500,
+    });
   }
 
   if (!group) {
@@ -56,7 +61,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       "get-group-next-event error",
       error.message.replace(/[\r\n]/g, " "),
     );
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Unable to load next event" }, {
+      status: 500,
+    });
   }
 
   if (!data) {
