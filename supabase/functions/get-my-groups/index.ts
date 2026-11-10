@@ -208,6 +208,7 @@ function canManageTasks(
 
 function isUpcoming(meeting: MeetingRow, now: number): boolean {
   if (meeting.status === "IN_PROGRESS") return true;
+  // Rascunhos CREATED sem data ficam de fora; com data, já são o próximo evento.
   if (meeting.status === "ENDED" || !meeting.date) return false;
   return Date.parse(meeting.date) >= now;
 }
