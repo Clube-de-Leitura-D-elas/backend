@@ -53,7 +53,7 @@ serve(async (req) => {
     }
     if (claimError.code === USER_ALREADY_EXISTS) {
       return new Response(JSON.stringify({
-        error: 'Não foi possível concluir o cadastro'
+        error: 'Você já tem um cadastro ativo'
       }), {
         status: 409
       });
