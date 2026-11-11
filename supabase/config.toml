@@ -670,3 +670,8 @@ entrypoint = "./functions/accept-pending-user/index.ts"
 enabled = true
 verify_jwt = true
 import_map = "./functions/get-dashboard-registrations-web/deno.json"
+
+[functions.get-dashboard-active-participants-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-dashboard-active-participants-web/deno.json"
