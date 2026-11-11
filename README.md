@@ -209,6 +209,9 @@ composta e um `CHECK` em `notifications_targets` garantem que todo alvo com enco
 desse encontro.
 
 Referência: CLU-296, que criou esta base (`create_notification`, `dedup_key` e `unread_count`).
+Exemplo completo de um aviso por evento: CLU-299 (`DRAW_RESULT`), que chama `create_notification`
+dentro da `record_meeting_raffle`, na mesma transação do sorteio
+(`supabase/migrations/20261109213455_notify_draw_result.sql`). Copie esse caminho para avisos novos.
 
 ### Lembretes agendados
 

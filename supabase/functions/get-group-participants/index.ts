@@ -2,15 +2,26 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { readGroupIdParam, requireGroupMember } from "../_shared/group.ts";
+import { oneLine } from "../_shared/log.ts";
+import { hasStarted } from "../_shared/meetingTasks.ts";
 import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 
 type GroupUserRow = {
+  id: string;
   is_coordinator: boolean;
   users: {
     id: string;
     name: string;
     photos: { url: string } | null;
   };
+};
+
+type CurrentMeetingRow = {
+  id: string;
+  host_id: string;
+  date: string | null;
+  location_id: string | null;
+  status: string;
 };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
@@ -42,7 +53,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   // grupo), para o número do título bater com o tamanho da lista.
   const { data, error } = await ctx.supabaseAdmin
     .from("group_users")
-    .select("is_coordinator, users!inner(id, name, photos(url))")
+    .select("id, is_coordinator, users!inner(id, name, photos(url))")
     .eq("group_id", groupId);
 
   if (error) {
@@ -52,6 +63,29 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     );
     return Response.json({ error: error.message }, { status: 500 });
   }
+
+  const { data: meetingsData, error: meetingsError } = await ctx.supabaseAdmin
+    .from("meetings")
+    .select("id, host_id, date, location_id, status")
+    .eq("group_id", groupId)
+    .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
+    .order("date", { ascending: true, nullsFirst: false })
+    .order("id", { ascending: true });
+
+  if (meetingsError) {
+    console.error(
+      "get-group-participants meetings error",
+      oneLine(meetingsError.message),
+    );
+    return Response.json(
+      { error: "Unable to load group participants" },
+      { status: 500 },
+    );
+  }
+
+  const meetings = (meetingsData ?? []) as unknown as CurrentMeetingRow[];
+  const currentHostGroupUserId =
+    pickHostMeeting(meetings, Date.now())?.host_id ?? null;
 
   const rows = (data ?? []) as unknown as GroupUserRow[];
 
@@ -68,6 +102,22 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       name: row.users.name,
       photo_url: resolvePhotoUrl(row.users.photos?.url),
       role: row.is_coordinator ? "coordinator" : "member",
+      is_coordinator: row.is_coordinator,
+      is_host: row.id === currentHostGroupUserId,
     })),
   });
 }));
+
+function pickHostMeeting(
+  meetings: CurrentMeetingRow[],
+  now: number,
+): CurrentMeetingRow | undefined {
+  return (
+    meetings.find((meeting) => meeting.status === "IN_PROGRESS") ??
+      meetings.findLast((meeting) => hasStarted(meeting, now)) ??
+      meetings.find(
+        (meeting) => meeting.date !== null && Date.parse(meeting.date) >= now,
+      ) ??
+      meetings.find((meeting) => meeting.status === "CREATED" && !meeting.date)
+  );
+}
