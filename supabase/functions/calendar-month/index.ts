@@ -28,6 +28,7 @@ type CalendarEvent = {
   groupId: string;
   groupName: string;
   city: string;
+  state: string;
   startsAt: string;
   status: string;
 };
@@ -263,6 +264,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       groupName:
         `Grupo ${String(group.number).padStart(2, "0")} — ${group.description}`,
       city: group.cities?.name ?? "",
+      state: group.cities?.uf ?? "",
       startsAt: meeting.date,
       status: meeting.status,
     });
