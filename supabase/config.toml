@@ -666,6 +666,11 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/accept-pending-user/index.ts"
 
+[functions.resend-claim-token-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/resend-claim-token-web/deno.json"
+
 [functions.get-dashboard-registrations-web]
 enabled = true
 verify_jwt = true

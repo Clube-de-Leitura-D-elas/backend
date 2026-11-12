@@ -10,6 +10,14 @@
  */
 export const CLAIM_TOKEN_LENGTH = 8;
 
+export const CLAIM_TOKEN_TTL_DAYS = 7;
+
+export function claimTokenExpiresAt(): string {
+  return new Date(
+    Date.now() + CLAIM_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+}
+
 const CLAIM_TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 export function generateClaimToken(): string {
