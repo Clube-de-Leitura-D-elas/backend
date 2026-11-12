@@ -603,13 +603,13 @@ INSERT INTO public.book_reviews (id, user_id, rating, commentary, evaluated_at, 
    now() - interval '55 days', pg_temp.sid('book', '1'))
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.pending_users (id, created_at, name, email, phone_number, is_approved, claim_token, token_used_at, claim_token_expires_at, birthday, job, level_of_education, instagram_user, book_name) VALUES
+INSERT INTO public.pending_users (id, created_at, name, email, phone_number, city, zone, is_approved, claim_token, token_used_at, claim_token_expires_at, birthday, job, level_of_education, instagram_user, book_name) VALUES
   (pg_temp.sid('pending_user', 'waiting'), now() - interval '3 days', 'Juliana Martins', 'juliana.martins@example.com',
-    '(51) 98888-1001', false, NULL, NULL, NULL, '1991-08-12', 'Professora', 'UNDERGRADUATE', 'juliana.martins', 'Torto Arado'),
+    '(51) 98888-1001', 'Porto Alegre', 'Zona Sul', false, NULL, NULL, NULL, '1991-08-12', 'Professora', 'UNDERGRADUATE', 'juliana.martins', 'Torto Arado'),
   (pg_temp.sid('pending_user', 'approved'), now() - interval '2 days', 'Camila Rocha', 'camila.rocha@example.com',
-    '(51) 98888-1002', true, 'seed-claim-token-approved', NULL, now() + interval '7 days', '1987-03-21', 'Designer', 'POSTGRADUATE', 'camilarocha', 'A Hora da Estrela'),
+    '(51) 98888-1002', 'Porto Alegre', 'Zona Sul', true, 'seed-claim-token-approved', NULL, now() + interval '7 days', '1987-03-21', 'Designer', 'POSTGRADUATE', 'camilarocha', 'A Hora da Estrela'),
   (pg_temp.sid('pending_user', 'used'), now() - interval '10 days', 'Renata Almeida', 'renata.almeida@example.com',
-    '(51) 98888-1003', true, 'seed-claim-token-used', now() - interval '4 days', now() - interval '3 days', '1985-11-06', 'Jornalista', 'MASTERS', 'renata.almeida', 'Quarto de Despejo')
+    '(51) 98888-1003', NULL, NULL, true, 'seed-claim-token-used', now() - interval '4 days', now() - interval '3 days', '1985-11-06', 'Jornalista', 'MASTERS', 'renata.almeida', 'Quarto de Despejo')
 ON CONFLICT (id) DO NOTHING;
 
 -- Histórico de inscrições para o gráfico "Novas inscrições" do dashboard

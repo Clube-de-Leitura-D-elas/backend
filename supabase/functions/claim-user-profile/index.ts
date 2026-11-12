@@ -1,10 +1,25 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts";
+import { oneLine } from "../_shared/log.ts";
+
+const INVALID_TOKEN = "CL001";
+const USER_ALREADY_EXISTS = "CL002";
+const INVALID_PENDING_USER = "CL003";
 
 serve(async (req) => {
+  let body: Record<string, unknown> | null;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "expected JSON body" }, { status: 400 });
+  }
+
+  const claimToken = body?.claim_token;
+  if (typeof claimToken !== "string" || claimToken.length === 0) {
+    return Response.json({ error: "missing claim_token" }, { status: 400 });
+  }
+
   const authHeader = req.headers.get('Authorization');
-  const { claim_token } = await req.json();
   const supabaseUrl = Deno.env.get('SUPABASE_URL') as string;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') as string;
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
@@ -23,110 +38,40 @@ serve(async (req) => {
     status: 401
   });
 
-  const { data: pendingUser, error: pendingError } = await supabaseAdmin
-    .from('pending_users')
-    .select('*')
-    .eq('claim_token', claim_token)
-    .eq('is_approved', true)
-    .is('token_used_at', null)
-    .single();
+  const { error: claimError } = await supabaseAdmin.rpc("claim_user_profile", {
+    p_claim_token: claimToken,
+    p_user_id: user.id,
+  });
 
-  if (pendingError || !pendingUser) {
-    return new Response(JSON.stringify({
-      error: 'Token inválido ou já utilizado'
-    }), {
-      status: 400
-    });
-  }
-
-  // 1. Resolve City and Zone
-  let cityId = null;
-  if (pendingUser.city) {
-    let { data: cityData } = await supabaseAdmin.from('cities').select('id').ilike('name', pendingUser.city).maybeSingle();
-    if (!cityData) {
-      const { data: newCity } = await supabaseAdmin.from('cities').insert({ name: pendingUser.city, uf: 'RS' }).select('id').single();
-      cityData = newCity;
+  if (claimError) {
+    if (claimError.code === INVALID_TOKEN) {
+      return new Response(JSON.stringify({
+        error: 'Token inválido ou já utilizado'
+      }), {
+        status: 400
+      });
     }
-    cityId = cityData?.id;
-  } else {
-    // default city if null since city_id is NOT NULL
-    const { data: fallbackCity } = await supabaseAdmin.from('cities').select('id').limit(1).single();
-    cityId = fallbackCity?.id;
-  }
-
-  let zoneId = null;
-  if (pendingUser.zone && cityId) {
-    let { data: zoneData } = await supabaseAdmin.from('zones').select('id').ilike('name', pendingUser.zone).eq('city_id', cityId).maybeSingle();
-    if (!zoneData) {
-      const { data: newZone } = await supabaseAdmin.from('zones').insert({ name: pendingUser.zone, city_id: cityId }).select('id').single();
-      zoneData = newZone;
+    if (claimError.code === USER_ALREADY_EXISTS) {
+      return new Response(JSON.stringify({
+        error: 'Você já tem um cadastro ativo'
+      }), {
+        status: 409
+      });
     }
-    zoneId = zoneData?.id;
-  }
-
-  // 2. Resolve Education Enum
-  let educationLevel = 'HIGH_SCHOOL';
-  const eduStr = pendingUser.level_of_education?.toLowerCase() || '';
-  if (eduStr.includes('superior')) educationLevel = 'UNDERGRADUATE';
-  else if (eduStr.includes('fundamental')) educationLevel = 'ELEMENTARY';
-  else if (eduStr.includes('médio')) educationLevel = 'HIGH_SCHOOL';
-  else if (eduStr.includes('pós') || eduStr.includes('pos')) educationLevel = 'POSTGRADUATE';
-  else if (eduStr.includes('técnico')) educationLevel = 'TECHNICAL';
-
-  // 3. Insert User
-  const newUserId = crypto.randomUUID();
-  const { error: insertError } = await supabaseAdmin.from('users').insert([
-    {
-      id: newUserId,
-      name: pendingUser.name,
-      email: pendingUser.email,
-      phone: pendingUser.phone_number,
-      birth_date: pendingUser.birthday,
-      job: pendingUser.job,
-      level_of_education: educationLevel,
-      instagram: pendingUser.instagram_user || '',
-      city_id: cityId,
-      zone_id: zoneId,
-      is_active: true,
-      user_id: user.id
+    if (claimError.code === INVALID_PENDING_USER) {
+      return new Response(JSON.stringify({
+        error: 'Não foi possível concluir o cadastro'
+      }), {
+        status: 400
+      });
     }
-  ]);
-
-  if (insertError) {
-    console.error("Insert error:", insertError);
+    console.error("claim-user-profile rpc claim_user_profile", oneLine(claimError.message));
     return new Response(JSON.stringify({
       error: 'Não foi possível concluir o cadastro'
     }), {
       status: 500
     });
   }
-
-  // 4. Insert Book Suggestion
-  if (pendingUser.book_name) {
-    const { error: suggestionError } = await supabaseAdmin.from('onboarding_book_suggestions').insert([
-      {
-        name: pendingUser.book_name,
-        user_id: newUserId
-      }
-    ]);
-
-    if (suggestionError) {
-      console.error("Book suggestion insert error:", suggestionError);
-      // Undo the user so the claim can be retried with the same token
-      const { error: rollbackError } = await supabaseAdmin.from('users').delete().eq('id', newUserId);
-      if (rollbackError) console.error("Rollback error:", rollbackError);
-      return new Response(JSON.stringify({
-        error: 'Não foi possível concluir o cadastro'
-      }), {
-        status: 500
-      });
-    }
-  }
-
-  // 5. Update Pending User
-  await supabaseAdmin.from('pending_users').update({
-    token_used_at: new Date().toISOString()
-  }).eq('id', pendingUser.id);
 
   return new Response(JSON.stringify({
     success: true
