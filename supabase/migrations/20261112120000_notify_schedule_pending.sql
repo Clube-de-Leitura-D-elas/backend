@@ -27,7 +27,8 @@ BEGIN
     FROM public.meetings m
     JOIN public.meeting_raffles mr ON mr.next_meeting_id = m.id
     JOIN public.books b ON b.id = m.book_id
-    WHERE (m.status = 'CREATED' OR m.date IS NULL OR m.location_id IS NULL)
+    WHERE m.status <> 'CONCLUDED'
+      AND (m.status = 'CREATED' OR m.date IS NULL OR m.location_id IS NULL)
       AND today >= mr.drawn_at + interval '7 days'
   LOOP
     milestone := floor(
