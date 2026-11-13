@@ -165,9 +165,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 }));
 
 /**
- * Situação da leitora como convidada em cada encontro: REQUESTED/REJECTED pelo
- * pedido de participação, ACCEPTED pelo pedido aceito ou por já estar em
- * meeting_users (convidada gravada antes dos pedidos, como no seed).
+ * Situação da leitora como convidada em cada encontro, só pelo pedido de
+ * participação. Uma linha em meeting_users não basta: ex-participante ainda
+ * consegue gravar a própria resposta e veria o endereço sem aprovação.
  */
 async function loadGuestStatuses(
   ctx: SupabaseContext<Database>,
@@ -177,32 +177,19 @@ async function loadGuestStatuses(
   const statuses = new Map<string, GuestStatus>();
   if (meetingIds.length === 0) return statuses;
 
-  const [requests, attendance] = await Promise.all([
-    ctx.supabaseAdmin
-      .from("meeting_guest_requests")
-      .select("meeting_id, status")
-      .eq("user_id", profileId)
-      .in("meeting_id", meetingIds),
-    ctx.supabaseAdmin
-      .from("meeting_users")
-      .select("meeting_id")
-      .eq("user_id", profileId)
-      .in("meeting_id", meetingIds),
-  ]);
+  const { data, error } = await ctx.supabaseAdmin
+    .from("meeting_guest_requests")
+    .select("meeting_id, status")
+    .eq("user_id", profileId)
+    .in("meeting_id", meetingIds);
 
-  if (requests.error || attendance.error) {
-    console.error(
-      "get-city-calendar guests",
-      oneLine((requests.error ?? attendance.error)!.message),
-    );
+  if (error) {
+    console.error("get-city-calendar guests", oneLine(error.message));
     return serverError();
   }
 
-  for (const row of requests.data ?? []) {
+  for (const row of data ?? []) {
     statuses.set(row.meeting_id, row.status as GuestStatus);
-  }
-  for (const row of attendance.data ?? []) {
-    statuses.set(row.meeting_id, "ACCEPTED");
   }
   return statuses;
 }

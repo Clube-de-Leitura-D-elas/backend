@@ -12,6 +12,7 @@ const RPC_ERRORS: Record<string, { status: number; error: string }> = {
   MG005: { status: 409, error: "already requested" },
   MG007: { status: 403, error: "inactive account" },
   MG008: { status: 409, error: "meeting has no reviewer" },
+  MG011: { status: 409, error: "recently rejected" },
 };
 
 // Pedido de participação da leitora autenticada num encontro de outro grupo da

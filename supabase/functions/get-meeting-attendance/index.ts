@@ -84,13 +84,29 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     ]),
   );
 
-  // Convidada: quem está em meeting_users sem ser do grupo (pedido de
-  // participação aceito, CONFIRMED). Ex-participante com presença registrada
-  // não entra: ela já não está entre as ACTIVE e não confirmou como convidada.
+  // Convidada: quem teve o pedido de participação aceito (ex-participante
+  // com linha em meeting_users não é convidada).
+  const { data: acceptedData, error: acceptedError } = await ctx.supabaseAdmin
+    .from("meeting_guest_requests")
+    .select("user_id")
+    .eq("meeting_id", meetingId)
+    .eq("status", "ACCEPTED");
+
+  if (acceptedError) {
+    console.error(
+      "get-meeting-attendance guests error",
+      acceptedError.message.replace(/[\r\n]/g, " "),
+    );
+    return Response.json({ error: "Unable to load meeting attendance" }, {
+      status: 500,
+    });
+  }
+
+  const acceptedIds = new Set((acceptedData ?? []).map((row) => row.user_id));
   const memberIds = new Set((groupUsers ?? []).map((row: any) => row.user_id));
   const guests = attendanceRows.filter((row) =>
+    acceptedIds.has(row.user_id) &&
     !memberIds.has(row.user_id) &&
-    row.invitation_status === "CONFIRMED" &&
     row.users.is_active
   );
 

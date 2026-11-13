@@ -265,9 +265,24 @@ async function notifyMeetingUpdate(
     return;
   }
 
+  // Convidadas aceitas também vão ao encontro e precisam saber da mudança.
+  const { data: guests, error: guestsError } = await ctx.supabaseAdmin
+    .from("meeting_guest_requests")
+    .select("user_id, users!inner(is_active)")
+    .eq("meeting_id", meeting.id)
+    .eq("status", "ACCEPTED")
+    .eq("users.is_active", true);
+  if (guestsError) {
+    console.error(
+      `${LOG_LABEL} notification guests error`,
+      oneLine(guestsError.message),
+    );
+    return;
+  }
+
   const recipientIds = [
     ...new Set(
-      (members ?? [])
+      [...(members ?? []), ...(guests ?? [])]
         .map((row: { user_id: string | null }) => row.user_id)
         .filter((userId): userId is string =>
           typeof userId === "string" && userId !== editorId

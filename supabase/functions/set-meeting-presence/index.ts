@@ -103,13 +103,13 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "Unable to set presence" }, { status: 500 });
   }
 
-  // Convidadas aceitas (CONFIRMED em meeting_users sem ser do grupo) também
-  // têm presença marcada, como na lista de get-meeting-attendance.
+  // Convidadas (pedido de participação aceito) também têm presença marcada,
+  // como na lista de get-meeting-attendance.
   const { data: guestData, error: guestsError } = await ctx.supabaseAdmin
-    .from("meeting_users")
+    .from("meeting_guest_requests")
     .select("user_id, users!inner(is_active)")
     .eq("meeting_id", meeting.id)
-    .eq("invitation_status", "CONFIRMED")
+    .eq("status", "ACCEPTED")
     .eq("users.is_active", true);
 
   if (guestsError) {

@@ -17,7 +17,8 @@
 --   MG001 encontro inexistente ou de grupo inativo
 --   MG002 encontro não está aberto a pedidos (não SCHEDULED ou já passou)
 --   MG003 encontro de outra cidade
---   MG004 leitora já é do grupo
+--   MG004 leitora já tem vínculo (ou pedido de entrada) com o grupo
+--   MG011 pedido recusado há menos de 24 h
 --   MG005 já pediu, já foi aceita ou já está no encontro
 --   MG006 pedido inexistente ou quem revisa não decide por este encontro
 --   MG007 conta da leitora inativa
@@ -111,11 +112,11 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'MG002', MESSAGE = 'meeting not open';
   END IF;
 
+  -- Qualquer vínculo bloqueia (não só ACTIVE): os lembretes só tratam como
+  -- convidada quem não tem linha nenhuma em group_users do grupo.
   IF EXISTS (
     SELECT 1 FROM public.group_users
-    WHERE group_id = v_meeting.group_id
-      AND user_id = p_user_id
-      AND registration_status = 'ACTIVE'
+    WHERE group_id = v_meeting.group_id AND user_id = p_user_id
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'MG004', MESSAGE = 'already a member';
   END IF;
@@ -140,6 +141,11 @@ BEGIN
   IF FOUND THEN
     IF v_request.status <> 'REJECTED' THEN
       RAISE EXCEPTION USING ERRCODE = 'MG005', MESSAGE = 'already requested';
+    END IF;
+
+    -- Evita que pedidos repetidos virem uma enxurrada de avisos.
+    IF v_request.reviewed_at > now() - interval '1 day' THEN
+      RAISE EXCEPTION USING ERRCODE = 'MG011', MESSAGE = 'recently rejected';
     END IF;
 
     UPDATE public.meeting_guest_requests
@@ -219,6 +225,10 @@ BEGIN
 
   IF p_approve AND (
     v_meeting.status <> 'SCHEDULED'
+    OR NOT EXISTS (
+      SELECT 1 FROM public.groups
+      WHERE id = v_meeting.group_id AND is_active
+    )
     OR v_meeting.date IS NULL
     OR v_meeting.date <= now()
     OR NOT EXISTS (
@@ -227,9 +237,7 @@ BEGIN
     )
     OR EXISTS (
       SELECT 1 FROM public.group_users
-      WHERE group_id = v_meeting.group_id
-        AND user_id = v_request.user_id
-        AND registration_status = 'ACTIVE'
+      WHERE group_id = v_meeting.group_id AND user_id = v_request.user_id
     )
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'MG010', MESSAGE = 'request no longer valid';

@@ -60,6 +60,28 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     });
   }
 
+  const { data: meeting, error: meetingError } = await ctx.supabaseAdmin
+    .from("meetings")
+    .select("status, date")
+    .eq("id", meetingId)
+    .maybeSingle();
+
+  if (meetingError) {
+    console.error(
+      "get-meeting-guest-requests meeting",
+      oneLine(meetingError.message),
+    );
+    return serverError();
+  }
+
+  // Encontro que já passou ou saiu de SCHEDULED não aceita mais convidadas.
+  if (
+    !meeting || meeting.status !== "SCHEDULED" || !meeting.date ||
+    new Date(meeting.date).getTime() <= Date.now()
+  ) {
+    return Response.json({ requests: [] });
+  }
+
   const { data, error } = await ctx.supabaseAdmin
     .from("meeting_guest_requests")
     .select("id, requested_at, users!inner(id, name, is_active, photos(url))")
