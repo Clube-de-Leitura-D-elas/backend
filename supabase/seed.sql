@@ -381,7 +381,9 @@ INSERT INTO public.users (
 )
 SELECT pg_temp.sid('user', u.key::text),
        u.name,
-       now() - (200 + u.key * 5) * interval '1 day',
+       -- Entradas espalhadas por ~4 anos (CLU-251): `key % 4` soma de 0 a 3 anos,
+       -- para o gráfico "Total de Participantes" crescer nas visões de 2 e 5 anos.
+       now() - (200 + u.key * 5 + (u.key % 4) * 365) * interval '1 day',
        u.phone, u.instagram,
        pg_temp.email(u.slug),
        u.birth, u.job,
