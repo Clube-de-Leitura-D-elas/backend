@@ -50,7 +50,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const filters = readFilters(url);
   if (filters instanceof Response) return filters;
   const { from, to } = parseListParams(url);
-  const cityFilter = readCityFilter(url);
+  // Com `groupId` o `cityId` é ignorado, inclusive se for inválido.
+  const cityFilter = filters.groupId ? null : readCityFilter(url);
   if (cityFilter instanceof Response) return cityFilter;
 
   const reader = await loadDiscoveryReader(ctx, "get-city-groups");
@@ -63,9 +64,11 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     )
     .eq("is_active", true)
     .order("number", { ascending: true });
-  const cityId = cityFilter(reader);
   if (filters.groupId) query = query.eq("id", filters.groupId);
-  else if (cityId) query = query.eq("city_id", cityId);
+  else {
+    const cityId = cityFilter?.(reader);
+    if (cityId) query = query.eq("city_id", cityId);
+  }
 
   const { data, error } = await query;
 
