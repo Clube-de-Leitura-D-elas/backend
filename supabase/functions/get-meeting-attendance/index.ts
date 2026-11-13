@@ -43,7 +43,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .select(`
       user_id,
       invitation_status,
-      presence_status
+      presence_status,
+      users!inner(name, is_active, photos(url))
     `)
     .eq("meeting_id", meetingId);
 
@@ -63,6 +64,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     user_id: string;
     invitation_status: "PENDING" | "CONFIRMED" | "DECLINED";
     presence_status: "PRESENT" | "ABSENT" | null;
+    users: { name: string; is_active: boolean; photos: { url: string } | null };
   };
 
   const attendanceRows =
@@ -82,10 +84,23 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     ]),
   );
 
+  // Convidada: quem está em meeting_users sem ser do grupo (pedido de
+  // participação aceito, CONFIRMED). Ex-participante com presença registrada
+  // não entra: ela já não está entre as ACTIVE e não confirmou como convidada.
+  const memberIds = new Set((groupUsers ?? []).map((row: any) => row.user_id));
+  const guests = attendanceRows.filter((row) =>
+    !memberIds.has(row.user_id) &&
+    row.invitation_status === "CONFIRMED" &&
+    row.users.is_active
+  );
+
   const resolvePhotoUrl = await resolveProfilePhotoUrls(
     ctx,
     req,
-    (groupUsers ?? []).map((row: any) => row.users?.photos?.url),
+    [
+      ...(groupUsers ?? []).map((row: any) => row.users?.photos?.url),
+      ...guests.map((row) => row.users.photos?.url),
+    ],
   );
   if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
 
@@ -96,8 +111,18 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       photo_url: resolvePhotoUrl(row.users?.photos?.url),
       invitation_status: invitationMap.get(row.user_id) ?? "PENDING",
       presence_status: presenceMap.get(row.user_id) ?? null,
+      is_guest: false,
     };
   });
 
-  return Response.json(attendanceList);
+  const guestList = guests.map((row) => ({
+    id: row.user_id,
+    name: row.users.name,
+    photo_url: resolvePhotoUrl(row.users.photos?.url),
+    invitation_status: row.invitation_status,
+    presence_status: row.presence_status,
+    is_guest: true,
+  }));
+
+  return Response.json([...attendanceList, ...guestList]);
 }));

@@ -79,7 +79,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (!ENDABLE_STATUSES.includes(meeting.status) && meeting.status !== "ENDED") {
+  if (
+    !ENDABLE_STATUSES.includes(meeting.status) && meeting.status !== "ENDED"
+  ) {
     return Response.json(
       { error: "Meeting cannot register presence in its current status" },
       { status: 409 },
@@ -101,7 +103,25 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "Unable to set presence" }, { status: 500 });
   }
 
-  const participants = (participantData ?? []) as unknown as ParticipantRow[];
+  // Convidadas aceitas (CONFIRMED em meeting_users sem ser do grupo) também
+  // têm presença marcada, como na lista de get-meeting-attendance.
+  const { data: guestData, error: guestsError } = await ctx.supabaseAdmin
+    .from("meeting_users")
+    .select("user_id, users!inner(is_active)")
+    .eq("meeting_id", meeting.id)
+    .eq("invitation_status", "CONFIRMED")
+    .eq("users.is_active", true);
+
+  if (guestsError) {
+    console.error(`${LOG_LABEL} guests error`, oneLine(guestsError.message));
+    return Response.json({ error: "Unable to set presence" }, { status: 500 });
+  }
+
+  const members = (participantData ?? []) as unknown as ParticipantRow[];
+  const memberIds = new Set(members.map((p) => p.user_id));
+  const guests = ((guestData ?? []) as unknown as ParticipantRow[])
+    .filter((g) => !memberIds.has(g.user_id));
+  const participants = [...members, ...guests];
   const participantUserIds = new Set(participants.map((p) => p.user_id));
   if (![...present].every((id) => participantUserIds.has(id))) {
     return Response.json({ error: '"present_user_ids" has non-participants' }, {
