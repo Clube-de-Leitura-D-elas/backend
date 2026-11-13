@@ -22,6 +22,7 @@ type GroupRow = {
 type Filters = {
   search: string;
   genreId: string | null;
+  groupId: string | null;
   minParticipants: number | null;
   maxParticipants: number | null;
 };
@@ -35,6 +36,9 @@ const normalize = (value: string) =>
 // Filtra e pagina em memória: a contagem de participantes não é coluna, e uma
 // cidade tem poucos grupos. `genres` traz as opções do filtro (gêneros dos
 // grupos da cidade). Ordem fixa por número do grupo (`order` é ignorado).
+// `groupId` devolve só aquele grupo, se for ativo e da cidade da leitora (senão
+// `items` vazio): é o detalhe do grupo para quem não é membro, já que
+// get-group-details exige ser membro. Com ele, `genres` são só os do grupo.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "GET") {
     return Response.json({ error: "expected GET request" }, { status: 405 });
@@ -48,7 +52,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const reader = await loadDiscoveryReader(ctx, "get-city-groups");
   if (reader instanceof Response) return reader;
 
-  const { data, error } = await ctx.supabaseAdmin
+  let query = ctx.supabaseAdmin
     .from("groups")
     .select(
       "id, number, description, cities(name, uf), photos(url), group_genres(genres(id, name))",
@@ -56,6 +60,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .eq("city_id", reader.cityId)
     .eq("is_active", true)
     .order("number", { ascending: true });
+  if (filters.groupId) query = query.eq("id", filters.groupId);
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("get-city-groups groups", oneLine(error.message));
@@ -129,6 +136,11 @@ function readFilters(url: URL): Filters | Response {
     return badRequest('missing/invalid "genreId"');
   }
 
+  const groupId = url.searchParams.get("groupId");
+  if (groupId !== null && !isUuid(groupId)) {
+    return badRequest('missing/invalid "groupId"');
+  }
+
   const minParticipants = readCount(url, "minParticipants");
   if (minParticipants instanceof Response) return minParticipants;
   const maxParticipants = readCount(url, "maxParticipants");
@@ -141,7 +153,7 @@ function readFilters(url: URL): Filters | Response {
     return badRequest('"minParticipants" must not exceed "maxParticipants"');
   }
 
-  return { search, genreId, minParticipants, maxParticipants };
+  return { search, genreId, groupId, minParticipants, maxParticipants };
 }
 
 function readCount(url: URL, key: string): number | null | Response {
