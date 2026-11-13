@@ -30,6 +30,8 @@ export type DiscoveryReader = { profileId: string; cityId: string };
 export type GroupDiscoveryInfo = {
   participantCount: (groupId: string) => number;
   membershipStatus: (groupId: string) => MembershipStatus;
+  /** Qualquer linha em group_users, inclusive status que o app não mostra. */
+  hasGroupLink: (groupId: string) => boolean;
 };
 
 function dbError(logLabel: string, step: string, message: string): Response {
@@ -117,5 +119,6 @@ export async function loadGroupDiscoveryInfo(
   return {
     participantCount: (groupId) => counts.get(groupId) ?? 0,
     membershipStatus: (groupId) => statuses.get(groupId) ?? null,
+    hasGroupLink: (groupId) => statuses.has(groupId),
   };
 }

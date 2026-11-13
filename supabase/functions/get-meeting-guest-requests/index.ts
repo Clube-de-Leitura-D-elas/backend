@@ -62,7 +62,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const { data: meeting, error: meetingError } = await ctx.supabaseAdmin
     .from("meetings")
-    .select("status, date")
+    .select("status, date, group_id")
     .eq("id", meetingId)
     .maybeSingle();
 
@@ -96,7 +96,27 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return serverError();
   }
 
-  const rows = (data ?? []) as unknown as RequestRow[];
+  const requests = (data ?? []) as unknown as RequestRow[];
+
+  // Quem passou a ter vínculo com o grupo depois de pedir não pode mais ser
+  // aceita (MG010); mostrar o pedido deixaria um Aceitar que sempre falha.
+  const { data: links, error: linksError } = requests.length === 0
+    ? { data: [], error: null }
+    : await ctx.supabaseAdmin
+      .from("group_users")
+      .select("user_id")
+      .eq("group_id", meeting.group_id);
+
+  if (linksError) {
+    console.error(
+      "get-meeting-guest-requests links",
+      oneLine(linksError.message),
+    );
+    return serverError();
+  }
+
+  const linked = new Set((links ?? []).map((link) => link.user_id));
+  const rows = requests.filter((row) => !linked.has(row.users.id));
 
   const resolvePhotoUrl = await resolveProfilePhotoUrls(
     ctx,
