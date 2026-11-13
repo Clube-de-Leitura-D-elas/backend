@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { withSupabase } from "jsr:@supabase/server@^1";
+import { type SupabaseContext, withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { toLocalDate } from "../_shared/date.ts";
 import { readDateRangeParams } from "../_shared/dateRange.ts";
@@ -20,6 +20,8 @@ type GroupRow = {
   cities: { name: string; uf: string } | null;
   photos: { url: string } | null;
 };
+
+type GuestStatus = "REQUESTED" | "ACCEPTED" | "REJECTED";
 
 type MeetingRow = {
   id: string;
@@ -109,6 +111,13 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         info.membershipStatus(meeting.group_id) === "MEMBER")
     );
 
+  const guestStatus = await loadGuestStatuses(
+    ctx,
+    reader.profileId,
+    meetings.map(({ meeting }) => meeting.id),
+  );
+  if (guestStatus instanceof Response) return guestStatus;
+
   const resolvePhotoUrl = await resolveProfilePhotoUrls(
     ctx,
     req,
@@ -120,6 +129,11 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     meetings: meetings.map(({ meeting, localDate }) => {
       const group = groupById.get(meeting.group_id)!;
       const isMember = info.membershipStatus(group.id) === "MEMBER";
+      const meetingGuestStatus = isMember
+        ? null
+        : guestStatus.get(meeting.id) ?? null;
+      // Convidada aceita vai ao encontro: vê local e anfitriã como membro.
+      const seesDetails = isMember || meetingGuestStatus === "ACCEPTED";
       const location = meeting.locations;
       return {
         id: meeting.id,
@@ -128,12 +142,13 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         status: meeting.status,
         location: location
           ? {
-            name: isMember ? location.name : null,
-            address: isMember ? location.address : null,
+            name: seesDetails ? location.name : null,
+            address: seesDetails ? location.address : null,
             neighborhood: readNeighborhood(location.address),
           }
           : null,
-        host_name: isMember ? meeting.host?.users?.name ?? null : null,
+        host_name: seesDetails ? meeting.host?.users?.name ?? null : null,
+        guest_status: meetingGuestStatus,
         group: {
           id: group.id,
           number: group.number,
@@ -148,6 +163,36 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     }),
   });
 }));
+
+/**
+ * Situação da leitora como convidada em cada encontro, só pelo pedido de
+ * participação. Uma linha em meeting_users não basta: ex-participante ainda
+ * consegue gravar a própria resposta e veria o endereço sem aprovação.
+ */
+async function loadGuestStatuses(
+  ctx: SupabaseContext<Database>,
+  profileId: string,
+  meetingIds: string[],
+): Promise<Map<string, GuestStatus> | Response> {
+  const statuses = new Map<string, GuestStatus>();
+  if (meetingIds.length === 0) return statuses;
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("meeting_guest_requests")
+    .select("meeting_id, status")
+    .eq("user_id", profileId)
+    .in("meeting_id", meetingIds);
+
+  if (error) {
+    console.error("get-city-calendar guests", oneLine(error.message));
+    return serverError();
+  }
+
+  for (const row of data ?? []) {
+    statuses.set(row.meeting_id, row.status as GuestStatus);
+  }
+  return statuses;
+}
 
 function serverError(): Response {
   return Response.json({ error: "Unable to load calendar" }, { status: 500 });
