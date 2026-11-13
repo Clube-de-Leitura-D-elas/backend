@@ -621,6 +621,11 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/get-city-calendar/deno.json"
 
+[functions.get-city-groups]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-city-groups/deno.json"
+
 [functions.get-user-profile-web]
 enabled = true
 verify_jwt = true
