@@ -616,6 +616,21 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/set-profile-photo/deno.json"
 
+[functions.request-group-join]
+enabled = true
+verify_jwt = true
+import_map = "./functions/request-group-join/deno.json"
+
+[functions.get-group-join-requests]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-group-join-requests/deno.json"
+
+[functions.review-group-join-request]
+enabled = true
+verify_jwt = true
+import_map = "./functions/review-group-join-request/deno.json"
+
 [functions.get-city-calendar]
 enabled = true
 verify_jwt = true
