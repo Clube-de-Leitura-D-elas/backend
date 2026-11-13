@@ -6,6 +6,11 @@
 -- GJ002 e MG003 deixam de existir.
 --
 -- CREATE OR REPLACE mantém os GRANT/REVOKE já aplicados às funções.
+--
+-- group_participant_counts: com "todas as cidades", contar os participantes
+-- com uma consulta por grupo viraria dezenas de requisições a cada mês do
+-- calendário. A regra de quem conta é a mesma de NOT_JOINED_FILTER
+-- (_shared/group.ts): todo vínculo menos pedido e recusa.
 
 CREATE OR REPLACE FUNCTION public.request_group_join(
   p_user_id uuid,
@@ -208,3 +213,22 @@ BEGIN
   RETURN v_request.id;
 END;
 $$;
+
+CREATE OR REPLACE FUNCTION public.group_participant_counts(p_group_ids uuid[])
+RETURNS TABLE (group_id uuid, participant_count bigint)
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  SELECT gu.group_id, count(*)
+  FROM public.group_users gu
+  WHERE gu.group_id = ANY (p_group_ids)
+    AND gu.registration_status NOT IN ('REQUESTED', 'REJECTED')
+  GROUP BY gu.group_id;
+$$;
+
+REVOKE ALL ON FUNCTION public.group_participant_counts(uuid[])
+FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.group_participant_counts(uuid[])
+TO service_role;

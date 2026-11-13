@@ -99,15 +99,19 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return serverError();
   }
 
+  const meetingRows = (meetingsData ?? []) as unknown as MeetingRow[];
+  // Só os grupos com encontro no intervalo: com "todas as cidades" seriam
+  // todos os grupos do clube.
+  const groupIds = [...new Set(meetingRows.map((meeting) => meeting.group_id))];
   const info = await loadGroupDiscoveryInfo(
     ctx,
     reader.profileId,
-    [...groupById.keys()],
+    groupIds,
     "get-city-calendar",
   );
   if (info instanceof Response) return info;
 
-  const meetings = ((meetingsData ?? []) as unknown as MeetingRow[])
+  const meetings = meetingRows
     .map((meeting) => ({ meeting, localDate: toLocalDate(meeting.date) }))
     .filter(({ meeting, localDate }) =>
       localDate !== null && localDate >= range.from &&
@@ -126,7 +130,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const resolvePhotoUrl = await resolveProfilePhotoUrls(
     ctx,
     req,
-    groups.map((group) => group.photos?.url),
+    groupIds.map((groupId) => groupById.get(groupId)?.photos?.url),
   );
   if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
 

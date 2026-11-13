@@ -1,6 +1,5 @@
 import type { SupabaseContext } from "jsr:@supabase/server@^1";
 import type { Database } from "./database.ts";
-import { NOT_JOINED_FILTER } from "./group.ts";
 import { oneLine } from "./log.ts";
 import { isUuid } from "./uuid.ts";
 
@@ -31,8 +30,8 @@ export type DiscoveryReader = { profileId: string; cityId: string };
 /**
  * Parâmetro `cityId` das telas de descoberta: uma cidade, `all` (todas) ou
  * ausente, que fica na cidade da leitora como antes do filtro, para versões
- * do app que não mandam o parâmetro. Devolve o id da cidade, null para todas,
- * ou a função que resolve a ausente a partir da leitora.
+ * do app que não mandam o parâmetro. Devolve a função que resolve o id da
+ * cidade (null = todas). Cidade inexistente só devolve lista vazia.
  */
 export function readCityFilter(
   url: URL,
@@ -61,8 +60,9 @@ function dbError(logLabel: string, step: string, message: string): Response {
 }
 
 /**
- * Leitora autenticada e a cidade dela, que recorta o que o app mostra. Conta
- * inativa não descobre grupos (nem conseguiria pedir para entrar).
+ * Leitora autenticada e a cidade dela, o recorte padrão quando o app não manda
+ * `cityId`. Conta inativa não descobre grupos (nem conseguiria pedir para
+ * entrar).
  */
 export async function loadDiscoveryReader(
   ctx: Ctx,
@@ -92,8 +92,8 @@ export async function loadDiscoveryReader(
 
 /**
  * Nº de participantes e situação da leitora em cada grupo. A contagem segue a
- * de get-group-details e get-my-groups (todo vínculo menos pedido e recusa),
- * para o número bater entre as telas.
+ * de get-group-details e get-my-groups (todo vínculo menos pedido e recusa,
+ * em group_participant_counts), para o número bater entre as telas.
  */
 export async function loadGroupDiscoveryInfo(
   ctx: Ctx,
@@ -105,29 +105,30 @@ export async function loadGroupDiscoveryInfo(
   const statuses = new Map<string, MembershipStatus>();
 
   if (groupIds.length > 0) {
-    // Uma contagem por grupo (head), porque trazer as linhas de todos os
-    // vínculos da cidade passaria do max_rows do PostgREST e cortaria calado.
-    const [mine, ...memberCounts] = await Promise.all([
+    // Contagem agregada no banco: trazer as linhas dos vínculos passaria do
+    // max_rows do PostgREST e cortaria calado.
+    const [mine, memberCounts] = await Promise.all([
       ctx.supabaseAdmin
         .from("group_users")
         .select("group_id, registration_status")
         .in("group_id", groupIds)
         .eq("user_id", profileId),
-      ...groupIds.map((groupId) =>
-        ctx.supabaseAdmin
-          .from("group_users")
-          .select("id", { count: "exact", head: true })
-          .eq("group_id", groupId)
-          .not("registration_status", "in", NOT_JOINED_FILTER)
-      ),
+      ctx.supabaseAdmin.rpc("group_participant_counts", {
+        p_group_ids: groupIds,
+      }),
     ]);
 
     if (mine.error) return dbError(logLabel, "membership", mine.error.message);
-    for (const [index, result] of memberCounts.entries()) {
-      if (result.error) {
-        return dbError(logLabel, "members", result.error.message);
-      }
-      counts.set(groupIds[index], result.count ?? 0);
+    if (memberCounts.error) {
+      return dbError(logLabel, "members", memberCounts.error.message);
+    }
+    for (
+      const row of (memberCounts.data ?? []) as {
+        group_id: string;
+        participant_count: number;
+      }[]
+    ) {
+      counts.set(row.group_id, Number(row.participant_count));
     }
     for (const row of mine.data ?? []) {
       statuses.set(
