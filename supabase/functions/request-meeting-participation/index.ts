@@ -7,7 +7,6 @@ import { isUuid } from "../_shared/uuid.ts";
 const RPC_ERRORS: Record<string, { status: number; error: string }> = {
   MG001: { status: 404, error: "meeting not found" },
   MG002: { status: 409, error: "meeting not open" },
-  MG003: { status: 403, error: "meeting not available" },
   MG004: { status: 409, error: "already a member" },
   MG005: { status: 409, error: "already requested" },
   MG007: { status: 403, error: "inactive account" },
@@ -15,9 +14,9 @@ const RPC_ERRORS: Record<string, { status: number; error: string }> = {
   MG011: { status: 409, error: "recently rejected" },
 };
 
-// Pedido de participação da leitora autenticada num encontro de outro grupo da
-// cidade dela. A regra (transições, aviso à anfitriã e às coordenadoras) fica
-// em request_meeting_participation.
+// Pedido de participação da leitora autenticada num encontro de outro grupo.
+// A regra (transições, aviso à anfitriã e às coordenadoras) fica em
+// request_meeting_participation.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "POST") {
     return Response.json({ error: "expected POST request" }, { status: 405 });
