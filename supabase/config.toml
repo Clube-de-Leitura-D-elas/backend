@@ -656,6 +656,11 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/get-city-groups/deno.json"
 
+[functions.get-discovery-cities]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-discovery-cities/deno.json"
+
 [functions.get-user-profile-web]
 enabled = true
 verify_jwt = true

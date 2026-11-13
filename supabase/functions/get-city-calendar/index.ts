@@ -6,6 +6,7 @@ import { readDateRangeParams } from "../_shared/dateRange.ts";
 import {
   loadDiscoveryReader,
   loadGroupDiscoveryInfo,
+  readCityFilter,
 } from "../_shared/groupDiscovery.ts";
 import { readNeighborhood } from "../_shared/location.ts";
 import { oneLine } from "../_shared/log.ts";
@@ -32,9 +33,10 @@ type MeetingRow = {
   host: { users: { name: string } } | null;
 };
 
-// Encontros dos grupos ativos da cidade da leitora entre `from` e `to`
-// (YYYY-MM-DD, datas de São Paulo, inclusivas), com a situação dela em cada
-// grupo. O app monta o mês e os filtros "Próximos"/"Passados" a partir daqui.
+// Encontros dos grupos ativos entre `from` e `to` (YYYY-MM-DD, datas de São
+// Paulo, inclusivas), com a situação da leitora em cada grupo. `cityId` recorta
+// a cidade (veja readCityFilter). O app monta o mês e os filtros
+// "Próximos"/"Passados" a partir daqui.
 //
 // Quem não é membro do grupo vê só o bairro (o local pode ser a casa da
 // anfitriã) e não vê o nome da anfitriã nem encontros em rascunho (CREATED);
@@ -44,19 +46,22 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "expected GET request" }, { status: 405 });
   }
 
-  const range = readDateRangeParams(new URL(req.url), {
-    maxDays: MAX_RANGE_DAYS,
-  });
+  const url = new URL(req.url);
+  const range = readDateRangeParams(url, { maxDays: MAX_RANGE_DAYS });
   if (range instanceof Response) return range;
+  const cityFilter = readCityFilter(url);
+  if (cityFilter instanceof Response) return cityFilter;
 
   const reader = await loadDiscoveryReader(ctx, "get-city-calendar");
   if (reader instanceof Response) return reader;
 
-  const { data: groupsData, error: groupsError } = await ctx.supabaseAdmin
+  const cityId = cityFilter(reader);
+  let groupsQuery = ctx.supabaseAdmin
     .from("groups")
     .select("id, number, cities(name, uf), photos(url)")
-    .eq("city_id", reader.cityId)
     .eq("is_active", true);
+  if (cityId) groupsQuery = groupsQuery.eq("city_id", cityId);
+  const { data: groupsData, error: groupsError } = await groupsQuery;
 
   if (groupsError) {
     console.error("get-city-calendar groups", oneLine(groupsError.message));

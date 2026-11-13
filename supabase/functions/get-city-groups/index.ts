@@ -4,6 +4,7 @@ import type { Database } from "../_shared/database.ts";
 import {
   loadDiscoveryReader,
   loadGroupDiscoveryInfo,
+  readCityFilter,
 } from "../_shared/groupDiscovery.ts";
 import { oneLine } from "../_shared/log.ts";
 import { parseListParams } from "../_shared/pagination.ts";
@@ -31,13 +32,14 @@ const normalize = (value: string) =>
   value.normalize("NFD").replace(/[̀-ͯ]/g, "")
     .toLocaleLowerCase("pt-BR").trim();
 
-// "Buscar novo grupo" do app: grupos ativos da cidade da leitora, com busca,
-// filtro de gênero e de nº de participantes, e a situação dela em cada um.
-// Filtra e pagina em memória: a contagem de participantes não é coluna, e uma
-// cidade tem poucos grupos. `genres` traz as opções do filtro (gêneros dos
-// grupos da cidade). Ordem fixa por número do grupo (`order` é ignorado).
-// `groupId` devolve só aquele grupo, se for ativo e da cidade da leitora (senão
-// `items` vazio): é o detalhe do grupo para quem não é membro, já que
+// "Buscar novo grupo" do app: grupos ativos, com filtro de cidade (veja
+// readCityFilter), busca, gênero e nº de participantes, e a situação da leitora
+// em cada um. Filtra e pagina em memória: a contagem de participantes não é
+// coluna, e o clube tem poucos grupos. `genres` traz as opções do filtro
+// (gêneros dos grupos da cidade filtrada). Ordem fixa por número do grupo
+// (`order` é ignorado).
+// `groupId` devolve só aquele grupo, se for ativo (senão `items` vazio), de
+// qualquer cidade: é o detalhe do grupo para quem não é membro, já que
 // get-group-details exige ser membro. Com ele, `genres` são só os do grupo.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "GET") {
@@ -48,6 +50,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const filters = readFilters(url);
   if (filters instanceof Response) return filters;
   const { from, to } = parseListParams(url);
+  const cityFilter = readCityFilter(url);
+  if (cityFilter instanceof Response) return cityFilter;
 
   const reader = await loadDiscoveryReader(ctx, "get-city-groups");
   if (reader instanceof Response) return reader;
@@ -57,10 +61,11 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .select(
       "id, number, description, cities(name, uf), photos(url), group_genres(genres(id, name))",
     )
-    .eq("city_id", reader.cityId)
     .eq("is_active", true)
     .order("number", { ascending: true });
+  const cityId = cityFilter(reader);
   if (filters.groupId) query = query.eq("id", filters.groupId);
+  else if (cityId) query = query.eq("city_id", cityId);
 
   const { data, error } = await query;
 

@@ -6,14 +6,13 @@ import { isUuid } from "../_shared/uuid.ts";
 
 const RPC_ERRORS: Record<string, { status: number; error: string }> = {
   GJ001: { status: 404, error: "group not found" },
-  GJ002: { status: 403, error: "group not available" },
   GJ003: { status: 409, error: "already requested or member" },
   GJ007: { status: 403, error: "inactive account" },
   GJ008: { status: 409, error: "group has no coordinator" },
 };
 
-// Pedido de entrada da leitora autenticada num grupo da cidade dela. A regra
-// (transições, cidade, aviso às coordenadoras) fica em request_group_join.
+// Pedido de entrada da leitora autenticada num grupo. A regra (transições,
+// aviso às coordenadoras) fica em request_group_join.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "POST") {
     return Response.json({ error: "expected POST request" }, { status: 405 });

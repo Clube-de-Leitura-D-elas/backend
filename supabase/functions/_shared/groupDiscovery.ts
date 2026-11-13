@@ -2,6 +2,7 @@ import type { SupabaseContext } from "jsr:@supabase/server@^1";
 import type { Database } from "./database.ts";
 import { NOT_JOINED_FILTER } from "./group.ts";
 import { oneLine } from "./log.ts";
+import { isUuid } from "./uuid.ts";
 
 type Ctx = SupabaseContext<Database>;
 
@@ -26,6 +27,26 @@ const STATUS_BY_REGISTRATION: Record<string, MembershipStatus> = {
 };
 
 export type DiscoveryReader = { profileId: string; cityId: string };
+
+/**
+ * Parâmetro `cityId` das telas de descoberta: uma cidade, `all` (todas) ou
+ * ausente, que fica na cidade da leitora como antes do filtro, para versões
+ * do app que não mandam o parâmetro. Devolve o id da cidade, null para todas,
+ * ou a função que resolve a ausente a partir da leitora.
+ */
+export function readCityFilter(
+  url: URL,
+): ((reader: DiscoveryReader) => string | null) | Response {
+  const value = url.searchParams.get("cityId");
+  if (value === null) return (reader) => reader.cityId;
+  if (value === "all") return () => null;
+  if (!isUuid(value)) {
+    return Response.json({ error: 'missing/invalid "cityId"' }, {
+      status: 400,
+    });
+  }
+  return () => value;
+}
 
 export type GroupDiscoveryInfo = {
   participantCount: (groupId: string) => number;
