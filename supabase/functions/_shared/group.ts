@@ -2,6 +2,11 @@ import { isUuid } from "./uuid.ts";
 import type { SupabaseContext } from "jsr:@supabase/server@^1";
 import type { Database } from "./database.ts";
 
+// Pedido de entrada (REQUESTED) e pedido recusado (REJECTED) têm linha em
+// group_users, mas não são vínculo com o grupo. Toda consulta de vínculo que
+// não filtra por ACTIVE precisa excluir os dois.
+export const NOT_JOINED_FILTER = "(REQUESTED,REJECTED)";
+
 /**
  * Lê o id do grupo da query string.
  *
@@ -89,7 +94,8 @@ export async function requireGroupMemberProfile(
     .from("group_users")
     .select("id")
     .eq("group_id", groupId)
-    .eq("user_id", profile.id);
+    .eq("user_id", profile.id)
+    .not("registration_status", "in", NOT_JOINED_FILTER);
   if (activeOnly) {
     membershipQuery = membershipQuery.eq("registration_status", "ACTIVE");
   }

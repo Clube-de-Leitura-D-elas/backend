@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
+import { NOT_JOINED_FILTER } from "../_shared/group.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
 const ALLOWED_INVITATION_STATUSES = new Set(["CONFIRMED", "DECLINED"]);
@@ -67,7 +68,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .supabaseAdmin
     .from("group_users")
     .select("id, group_id")
-    .eq("user_id", profile.id);
+    .eq("user_id", profile.id)
+    .not("registration_status", "in", NOT_JOINED_FILTER);
 
   if (membershipsError) {
     console.error(
