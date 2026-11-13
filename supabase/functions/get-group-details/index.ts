@@ -1,7 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
-import { readGroupIdParam, requireGroupMember } from "../_shared/group.ts";
+import {
+  NOT_JOINED_FILTER,
+  readGroupIdParam,
+  requireGroupMember,
+} from "../_shared/group.ts";
 
 type GroupRow = {
   id: string;
@@ -42,7 +46,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { count: participantCount, error: countError } = await ctx.supabaseAdmin
     .from("group_users")
     .select("id", { count: "exact", head: true })
-    .eq("group_id", groupId);
+    .eq("group_id", groupId)
+    .not("registration_status", "in", NOT_JOINED_FILTER);
 
   if (countError) {
     console.error(

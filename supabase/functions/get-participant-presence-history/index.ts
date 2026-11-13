@@ -86,7 +86,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .from("group_users")
     .select("group_id, groups!inner(number)")
     .eq("user_id", participantId)
-    .neq("registration_status", "PENDING");
+    .not("registration_status", "in", "(PENDING,REQUESTED,REJECTED)");
 
   if (membershipError) {
     console.error(
