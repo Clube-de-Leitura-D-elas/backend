@@ -621,6 +621,16 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/request-group-join/deno.json"
 
+[functions.get-group-join-requests]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-group-join-requests/deno.json"
+
+[functions.review-group-join-request]
+enabled = true
+verify_jwt = true
+import_map = "./functions/review-group-join-request/deno.json"
+
 [functions.get-user-profile-web]
 enabled = true
 verify_jwt = true
