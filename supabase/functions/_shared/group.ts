@@ -1,3 +1,4 @@
+import { oneLine } from "./log.ts";
 import { isUuid } from "./uuid.ts";
 import type { SupabaseContext } from "jsr:@supabase/server@^1";
 import type { Database } from "./database.ts";
@@ -117,6 +118,47 @@ export async function requireGroupMemberProfile(
   }
 
   return { profileId: profile.id };
+}
+
+/**
+ * Garante que quem chamou é coordenadora ativa do grupo: vínculo ACTIVE com
+ * is_coordinator e conta ativa (users.is_active).
+ * Retorna uma Response de erro para devolver direto, ou null quando permitido.
+ */
+export async function requireGroupCoordinator(
+  ctx: SupabaseContext<Database>,
+  groupId: string,
+  logLabel: string,
+): Promise<Response | null> {
+  const authUserId = ctx.userClaims?.id;
+  if (!authUserId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("group_users")
+    .select("id, users!inner(user_id, is_active)")
+    .eq("group_id", groupId)
+    .eq("users.user_id", authUserId)
+    .eq("users.is_active", true)
+    .eq("is_coordinator", true)
+    .eq("registration_status", "ACTIVE")
+    .limit(1);
+
+  if (error) {
+    console.error(`${logLabel} coordinator error`, oneLine(error.message));
+    return Response.json({ error: "Unable to check group coordinator" }, {
+      status: 500,
+    });
+  }
+
+  if (!data || data.length === 0) {
+    return Response.json({ error: "Forbidden: group coordinators only" }, {
+      status: 403,
+    });
+  }
+
+  return null;
 }
 
 export async function isGroupCoordinatorOrMeetingHost(
