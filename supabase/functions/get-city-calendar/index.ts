@@ -111,12 +111,12 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         info.membershipStatus(meeting.group_id) === "MEMBER")
     );
 
-  const guestStatus = await loadGuestStatuses(
+  const guests = await loadGuestStatuses(
     ctx,
     reader.profileId,
     meetings.map(({ meeting }) => meeting.id),
   );
-  if (guestStatus instanceof Response) return guestStatus;
+  if (guests instanceof Response) return guests;
 
   const resolvePhotoUrl = await resolveProfilePhotoUrls(
     ctx,
@@ -129,12 +129,26 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     meetings: meetings.map(({ meeting, localDate }) => {
       const group = groupById.get(meeting.group_id)!;
       const isMember = info.membershipStatus(group.id) === "MEMBER";
-      const meetingGuestStatus = isMember
+      const hasGroupLink = info.hasGroupLink(group.id);
+      const storedGuestStatus = guests.statuses.get(meeting.id) ?? null;
+      // Pedido de convidada de quem depois passou a ter vínculo com o grupo
+      // não pode mais ser aceito e some da lista da anfitriã; não fica
+      // "aguardando" para sempre.
+      const meetingGuestStatus = isMember ||
+          (hasGroupLink && storedGuestStatus === "REQUESTED")
         ? null
-        : guestStatus.get(meeting.id) ?? null;
+        : storedGuestStatus;
       // Convidada aceita vai ao encontro: vê local e anfitriã como membro.
       const seesDetails = isMember || meetingGuestStatus === "ACCEPTED";
       const location = meeting.locations;
+      // Espelha as regras de request_meeting_participation que o app não
+      // enxerga: qualquer vínculo bloqueia (mesmo os que não viram status),
+      // assim como linha em meeting_users e recusa nas últimas 24h.
+      const canRequestParticipation = !hasGroupLink &&
+        !guests.blocked.has(meeting.id) &&
+        meeting.status === "SCHEDULED" &&
+        new Date(meeting.date).getTime() > Date.now() &&
+        (meetingGuestStatus === null || meetingGuestStatus === "REJECTED");
       return {
         id: meeting.id,
         date: meeting.date,
@@ -149,6 +163,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
           : null,
         host_name: seesDetails ? meeting.host?.users?.name ?? null : null,
         guest_status: meetingGuestStatus,
+        can_request_participation: canRequestParticipation,
         group: {
           id: group.id,
           number: group.number,
@@ -164,34 +179,57 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   });
 }));
 
+// Mesma espera do RPC (MG011) para pedir de novo depois de uma recusa.
+const REQUEST_AGAIN_AFTER_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Situação da leitora como convidada em cada encontro, só pelo pedido de
  * participação. Uma linha em meeting_users não basta: ex-participante ainda
- * consegue gravar a própria resposta e veria o endereço sem aprovação.
+ * consegue gravar a própria resposta e veria o endereço sem aprovação. Essa
+ * linha (e a recusa recente) só bloqueia um pedido novo, como no RPC.
  */
 async function loadGuestStatuses(
   ctx: SupabaseContext<Database>,
   profileId: string,
   meetingIds: string[],
-): Promise<Map<string, GuestStatus> | Response> {
+): Promise<
+  { statuses: Map<string, GuestStatus>; blocked: Set<string> } | Response
+> {
   const statuses = new Map<string, GuestStatus>();
-  if (meetingIds.length === 0) return statuses;
+  const blocked = new Set<string>();
+  if (meetingIds.length === 0) return { statuses, blocked };
 
-  const { data, error } = await ctx.supabaseAdmin
-    .from("meeting_guest_requests")
-    .select("meeting_id, status")
-    .eq("user_id", profileId)
-    .in("meeting_id", meetingIds);
+  const [requests, attendances] = await Promise.all([
+    ctx.supabaseAdmin
+      .from("meeting_guest_requests")
+      .select("meeting_id, status, reviewed_at")
+      .eq("user_id", profileId)
+      .in("meeting_id", meetingIds),
+    ctx.supabaseAdmin
+      .from("meeting_users")
+      .select("meeting_id")
+      .eq("user_id", profileId)
+      .in("meeting_id", meetingIds),
+  ]);
 
+  const error = requests.error ?? attendances.error;
   if (error) {
     console.error("get-city-calendar guests", oneLine(error.message));
     return serverError();
   }
 
-  for (const row of data ?? []) {
+  const now = Date.now();
+  for (const row of requests.data ?? []) {
     statuses.set(row.meeting_id, row.status as GuestStatus);
+    if (
+      row.status === "REJECTED" && row.reviewed_at &&
+      now - new Date(row.reviewed_at).getTime() < REQUEST_AGAIN_AFTER_MS
+    ) {
+      blocked.add(row.meeting_id);
+    }
   }
-  return statuses;
+  for (const row of attendances.data ?? []) blocked.add(row.meeting_id);
+  return { statuses, blocked };
 }
 
 function serverError(): Response {
