@@ -1,0 +1,136 @@
+{
+  "info": {
+    "_postman_id": "c1f8a840-7521-4f11-8889-4b6e5e8e3d01",
+    "name": "Clube de Leitura Delas - Push Notifications",
+    "description": "Coleção para envio e teste de Push Notifications com Supabase Edge Functions e Firebase Cloud Messaging.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Disparar Push Manual (send-push-notifications)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{SUPABASE_ANON_KEY}}"
+          },
+          {
+            "key": "apikey",
+            "value": "{{SUPABASE_ANON_KEY}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user_ids\": [\n    \"c7c343ab-988d-426a-b981-716451f1f286\"\n  ],\n  \"title\": \"Aviso do Clube de Leitura 📖\",\n  \"body\": \"Olá! Testando envio de notificação via Postman.\",\n  \"data\": {\n    \"screen\": \"/home\",\n    \"origem\": \"postman\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{SUPABASE_URL}}/functions/v1/send-push-notifications",
+          "host": [
+            "{{SUPABASE_URL}}"
+          ],
+          "path": [
+            "functions",
+            "v1",
+            "send-push-notifications"
+          ]
+        },
+        "description": "Dispara notificações push para uma lista de usuários (ids da tabela public.users ou auth.users). Se o token for inválido, limpa no banco automaticamente."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Executar Lembretes de Encontros (notify-upcoming-meetings)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{SUPABASE_ANON_KEY}}"
+          },
+          {
+            "key": "apikey",
+            "value": "{{SUPABASE_ANON_KEY}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{SUPABASE_URL}}/functions/v1/notify-upcoming-meetings",
+          "host": [
+            "{{SUPABASE_URL}}"
+          ],
+          "path": [
+            "functions",
+            "v1",
+            "notify-upcoming-meetings"
+          ]
+        },
+        "description": "Verifica os encontros agendados nos próximos 7 dias e envia a notificação para todos os membros ativos do grupo correspondente."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Salvar / Atualizar Token FCM (save-fcm-token)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{USER_ACCESS_TOKEN}}"
+          },
+          {
+            "key": "apikey",
+            "value": "{{SUPABASE_ANON_KEY}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"fcm_token\": \"exemplo_token_fcm_de_teste\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{SUPABASE_URL}}/functions/v1/save-fcm-token",
+          "host": [
+            "{{SUPABASE_URL}}"
+          ],
+          "path": [
+            "functions",
+            "v1",
+            "save-fcm-token"
+          ]
+        },
+        "description": "Atualiza o FCM Token da usuária autenticada (requer JWT de usuário no header Authorization)."
+      },
+      "response": []
+    }
+  ]
+}
