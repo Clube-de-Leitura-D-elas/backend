@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { type SupabaseContext, withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
+import { formatMeetingWhen } from "../_shared/date.ts";
 import { getGooglePlace, isGooglePlaceId } from "../_shared/googlePlaces.ts";
 import {
   isGroupCoordinatorOrMeetingHost,
@@ -28,8 +29,14 @@ type MeetingRow = {
   group_id: string;
   host_id: string;
   status: string;
+  date: string | null;
   location_id: string | null;
-  locations: { google_place_id: string } | null;
+  locations: { name: string; google_place_id: string } | null;
+};
+
+type MeetingLocation = {
+  id: string;
+  name: string;
 };
 
 type Ctx = SupabaseContext<Database>;
@@ -45,7 +52,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
-      "id, group_id, host_id, status, location_id, locations(google_place_id)",
+      "id, group_id, host_id, status, date, location_id, " +
+        "locations(name, google_place_id)",
     )
     .eq("id", request.meetingId)
     .maybeSingle();
@@ -93,13 +101,15 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   let locationId = meeting.location_id;
+  let locationName = meeting.locations?.name ?? null;
   if (
     request.googlePlaceId &&
     request.googlePlaceId !== meeting.locations?.google_place_id
   ) {
     const location = await findOrCreateLocation(ctx, request.googlePlaceId);
     if (location instanceof Response) return location;
-    locationId = location;
+    locationId = location.id;
+    locationName = location.name;
   }
 
   const status = meeting.status === "CREATED" ? "SCHEDULED" : meeting.status;
@@ -126,6 +136,23 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "meeting can no longer be edited" }, {
       status: 409,
     });
+  }
+
+  if (locationId && locationName) {
+    try {
+      await notifyMeetingUpdate(ctx, {
+        meeting,
+        editorId: member.profileId,
+        nextDate: request.date,
+        nextLocationId: locationId,
+        nextLocationName: locationName,
+      });
+    } catch (error) {
+      console.error(
+        `${LOG_LABEL} notification error`,
+        oneLine(error instanceof Error ? error.message : String(error)),
+      );
+    }
   }
 
   return Response.json({ id: updated.id, status: updated.status });
@@ -188,13 +215,121 @@ async function readUpdateMeetingRequest(
   };
 }
 
+async function notifyMeetingUpdate(
+  ctx: Ctx,
+  change: {
+    meeting: MeetingRow;
+    editorId: string;
+    nextDate: string;
+    nextLocationId: string;
+    nextLocationName: string;
+  },
+): Promise<void> {
+  const { meeting, editorId, nextDate, nextLocationId, nextLocationName } =
+    change;
+  const previousDate = meeting.date;
+  const previousLocationId = meeting.location_id;
+  const previousLocationName = meeting.locations?.name;
+  // Primeira data ou primeiro local ainda não é mudança.
+  if (!previousDate || !previousLocationId || !previousLocationName) return;
+
+  const dateChanged = new Date(previousDate).getTime() !==
+    new Date(nextDate).getTime();
+  const placeChanged = previousLocationId !== nextLocationId;
+  if (!dateChanged && !placeChanged) return;
+
+  const message = meetingUpdatedMessage(
+    previousDate,
+    nextDate,
+    previousLocationName,
+    nextLocationName,
+    dateChanged,
+    placeChanged,
+  );
+  if (!message) {
+    console.error(`${LOG_LABEL} notification message error`);
+    return;
+  }
+
+  const { data: members, error: membersError } = await ctx.supabaseAdmin
+    .from("group_users")
+    .select("user_id, users!inner(is_active)")
+    .eq("group_id", meeting.group_id)
+    .eq("registration_status", "ACTIVE")
+    .eq("users.is_active", true);
+  if (membersError) {
+    console.error(
+      `${LOG_LABEL} notification recipients error`,
+      oneLine(membersError.message),
+    );
+    return;
+  }
+
+  const recipientIds = [
+    ...new Set(
+      (members ?? [])
+        .map((row: { user_id: string | null }) => row.user_id)
+        .filter((userId): userId is string =>
+          typeof userId === "string" && userId !== editorId
+        ),
+    ),
+  ];
+  if (recipientIds.length === 0) return;
+
+  const { error: notifyError } = await ctx.supabaseAdmin.rpc(
+    "create_notification",
+    {
+      p_type: "MEETING_UPDATED",
+      p_title: "Encontro remarcado",
+      p_message: message,
+      p_user_ids: recipientIds,
+      p_meeting_id: meeting.id,
+      // Cada gravação que muda data ou local é outro aviso, inclusive a
+      // volta a um horário anterior. O instante desta execução ocupa o
+      // lugar do updated_at, que meetings não tem.
+      p_dedup_key: `MEETING_UPDATED:${meeting.id}:${new Date().toISOString()}`,
+    },
+  );
+  if (notifyError) {
+    console.error(
+      `${LOG_LABEL} notification error`,
+      oneLine(notifyError.message),
+    );
+  }
+}
+
+function meetingUpdatedMessage(
+  previousDate: string,
+  nextDate: string,
+  previousPlace: string,
+  nextPlace: string,
+  dateChanged: boolean,
+  placeChanged: boolean,
+): string | null {
+  const previousWhen = formatMeetingWhen(previousDate);
+  const nextWhen = formatMeetingWhen(nextDate);
+  if (!previousWhen || !nextWhen) return null;
+
+  if (dateChanged && placeChanged) {
+    return `De ${previousWhen}, no ${previousPlace} ` +
+      `para ${nextWhen}, no ${nextPlace}`;
+  }
+  if (dateChanged) {
+    return `De ${previousWhen} para ${nextWhen}, no ${nextPlace}`;
+  }
+  if (placeChanged) {
+    return `${nextWhen}, de ${previousPlace} para ${nextPlace}`;
+  }
+  return null;
+}
+
 async function findOrCreateLocation(
   ctx: Ctx,
   googlePlaceId: string,
-): Promise<string | Response> {
+): Promise<MeetingLocation | Response> {
   const { data: existing, error } = await ctx.supabaseAdmin
     .from("locations")
-    .select("id")
+    .select("id, name")
     .eq("google_place_id", googlePlaceId)
     .limit(1)
     .maybeSingle();
@@ -204,7 +339,9 @@ async function findOrCreateLocation(
     return Response.json({ error: error.message }, { status: 500 });
   }
 
-  if (existing) return existing.id as string;
+  if (existing) {
+    return { id: existing.id as string, name: existing.name as string };
+  }
 
   const place = await getGooglePlace(googlePlaceId, LOG_LABEL);
   if (place instanceof Response) return place;
@@ -218,7 +355,7 @@ async function findOrCreateLocation(
       latitude: place.latitude,
       longitude: place.longitude,
     })
-    .select("id")
+    .select("id, name")
     .single();
 
   if (insertError) {
@@ -226,5 +363,5 @@ async function findOrCreateLocation(
     return Response.json({ error: insertError.message }, { status: 500 });
   }
 
-  return created.id as string;
+  return { id: created.id as string, name: created.name as string };
 }
