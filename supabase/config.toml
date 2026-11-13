@@ -616,6 +616,11 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/set-profile-photo/deno.json"
 
+[functions.request-group-join]
+enabled = true
+verify_jwt = true
+import_map = "./functions/request-group-join/deno.json"
+
 [functions.get-user-profile-web]
 enabled = true
 verify_jwt = true
