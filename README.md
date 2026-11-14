@@ -270,6 +270,87 @@ disso, ela é cancelada, aparece como `failed` e nada do que os passos gravaram 
 seguinte eles rodam de novo. Nomes em `scheduled_notification_steps` são só o nome da função, sem
 schema (`notify_meeting_reminders`, não `public.notify_meeting_reminders`).
 
+### Push (FCM)
+
+Toda notificação criada por `create_notification` também vira push no celular da leitora (CLU-300).
+O caminho é:
+
+1. Um gatilho em `notifications_targets` (`notifications_targets_push`, por instrução) junta os
+   alvos cuja notificação já é devida (`scheduled_for <= now()`) e chama a edge function
+   `send-push` por `pg_net`, com a chave secreta do projeto no header `apikey`.
+2. A `send-push` busca os tokens da leitora em `user_devices` e envia pela API HTTP v1 do FCM
+   (`_shared/fcm.ts`). Token que o FCM devolve como inexistente (`UNREGISTERED`) é apagado de
+   `user_devices`. Qualquer falha de envio só gera log: a notificação in-app já está gravada.
+3. Avisos agendados para o futuro saem pelo passo diário `send_pending_pushes`, registrado em
+   `scheduled_notification_steps`, que roda no job das 09:00 de São Paulo.
+
+Limites que valem conhecer:
+
+- Um aviso agendado para as 15h aparece no app às 15h, mas o push só sai no dia seguinte às 09:00.
+  Avisos criados já devidos saem na hora.
+- `notifications_targets.push_sent_at` marca o envio **enfileirado** no `pg_net`, não entregue.
+  Se o gatilho não conseguir enfileirar (secret ausente), o passo diário tenta de novo; avisos
+  devidos há mais de 2 dias são descartados do push.
+- Erro temporário do FCM (`UNAVAILABLE`, `QUOTA_EXCEEDED`, `INTERNAL`) é só logado, não há nova
+  tentativa: aquele push se perde, a notificação in-app continua.
+- `register-device` e `unregister-device` são as functions que o app chama (auth de leitora). A
+  `send-push` só aceita a chave secreta do projeto (`auth: "secret"`); leitora, chave `anon` e
+  chamada sem credencial recebem 401.
+
+#### Configurar a credencial do Firebase
+
+1. No [console do Firebase](https://console.firebase.google.com/), abra o projeto do app, vá em
+   **Configurações do projeto → Contas de serviço** e clique em **Gerar nova chave privada**. O
+   arquivo `.json` baixado é a credencial e só pode ser baixado uma vez. Nunca o commite.
+2. Cadastre o **conteúdo inteiro** do JSON como o secret `FIREBASE_SERVICE_ACCOUNT` das edge
+   functions. O caminho mais simples é o Dashboard do Supabase (**Edge Functions → Secrets**), colando
+   o JSON no valor. Pela CLI é `npx supabase secrets set FIREBASE_SERVICE_ACCOUNT=...`, mas o JSON
+   tem aspas e quebras de linha e o quoting muda de shell para shell.
+3. Cadastre os dois secrets do Vault usados pelo gatilho (SQL Editor do Studio ou `psql`):
+
+   ```sql
+   SELECT vault.create_secret('https://<projeto>.supabase.co/functions/v1', 'edge_base_url');
+   SELECT vault.create_secret('<chave secreta sb_secret_...>', 'edge_api_key');
+   ```
+
+   Sem eles nenhum push sai, e o gatilho só registra um `WARNING` no log do Postgres. A
+   `edge_api_key` precisa ser a chave `sb_secret_...`: o JWT antigo de `service_role` não é aceito
+   pela `send-push`. Para ver se já existem, sem mostrar o valor:
+   `SELECT name FROM vault.decrypted_secrets WHERE name IN ('edge_base_url', 'edge_api_key');`
+
+#### Testar localmente
+
+1. Coloque a credencial no `supabase/functions/.env.local` (fora do commit), numa linha só e entre
+   aspas simples: `FIREBASE_SERVICE_ACCOUNT='{"type":"service_account", ...}'`. Sem ela a
+   `send-push` loga `FIREBASE_SERVICE_ACCOUNT missing or invalid` e não envia nada.
+2. Suba as functions com `npx supabase functions serve --env-file supabase/functions/.env.local`.
+3. Cadastre os secrets do Vault local. Dentro do Docker, as functions respondem em
+   `http://kong:8000/functions/v1`, e a chave é a `SECRET_KEY` de `npx supabase status -o env`:
+
+   ```sql
+   SELECT vault.create_secret('http://kong:8000/functions/v1', 'edge_base_url');
+   SELECT vault.create_secret('<SECRET_KEY local>', 'edge_api_key');
+   ```
+
+4. Registre um aparelho e crie uma notificação (o token abaixo é de mentira; com um token real do
+   app, o push chega no celular):
+
+   ```sql
+   INSERT INTO public.user_devices (user_id, fcm_token, platform)
+   VALUES ('<users.id da leitora>', '<token do FCM>', 'ANDROID');
+
+   SELECT public.create_notification(
+     'DRAW_RESULT'::public.notification_type, 'Título', 'Mensagem',
+     ARRAY['<users.id da leitora>'::uuid]
+   );
+   ```
+
+5. Veja o que a `send-push` respondeu (o log dela aparece no terminal do `functions serve`):
+
+   ```sql
+   SELECT status_code, content FROM net._http_response ORDER BY id DESC LIMIT 5;
+   ```
+
 ---
 
 ## 🔐 Segredos
@@ -283,6 +364,8 @@ Nenhuma chave do Supabase é commitada. As credenciais ficam no **GitHub Secrets
 | `GOOGLE_BOOKS_API_KEY` | `npx supabase secrets set GOOGLE_BOOKS_API_KEY=...` | `supabase/functions/.env.local` |
 | `RESEND_API_KEY` | `npx supabase secrets set RESEND_API_KEY=...` | `supabase/functions/.env.local` |
 | `EMAIL_FROM` | `npx supabase secrets set EMAIL_FROM=...` | `supabase/functions/.env.local` |
+| `FIREBASE_SERVICE_ACCOUNT` | Dashboard (Edge Functions → Secrets) ou `npx supabase secrets set` | `supabase/functions/.env.local` |
+| `edge_base_url` e `edge_api_key` | `vault.create_secret(...)`, ver [Push (FCM)](#push-fcm) | `vault.create_secret(...)` no banco local |
 
 ---
 
