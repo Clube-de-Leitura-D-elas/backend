@@ -4,46 +4,7 @@ import type { Database } from "../_shared/database.ts";
 import { oneLine } from "../_shared/log.ts";
 import { requireRole } from "../_shared/role.ts";
 import { RECORD_STATUSES } from "../_shared/meetingRecord.ts";
-
-const TIME_ZONE = "America/Sao_Paulo";
-
-function getMonthStart(year: number, month: number): string {
-  // month pode ser 0 ou 13; Date ajusta automaticamente o ano.
-  const normalized = new Date(Date.UTC(year, month - 1, 1));
-  const targetYear = normalized.getUTCFullYear();
-  const targetMonth = normalized.getUTCMonth() + 1;
-
-  // Descobre o offset de São Paulo na data aproximada.
-  const approximate = new Date(Date.UTC(targetYear, targetMonth - 1, 1));
-
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(approximate);
-
-  const values = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
-
-  const localAsUtc = Date.UTC(
-    Number(values.year),
-    Number(values.month) - 1,
-    Number(values.day),
-    Number(values.hour),
-    Number(values.minute),
-    Number(values.second),
-  );
-
-  const offset = localAsUtc - approximate.getTime();
-
-  return new Date(approximate.getTime() - offset).toISOString();
-}
+import { getMonthBoundaries } from "../_shared/date.ts";
 
 Deno.serve(
   withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
@@ -79,20 +40,8 @@ Deno.serve(
       return Response.json({ error: "unable to load groups" }, { status: 500 });
     }
 
-    const dateParts = new Intl.DateTimeFormat("en-US", {
-      timeZone: TIME_ZONE,
-      year: "numeric",
-      month: "numeric",
-    }).formatToParts(new Date());
-
-    const year = Number(dateParts.find((part) => part.type === "year")?.value);
-    const month = Number(
-      dateParts.find((part) => part.type === "month")?.value,
-    );
-
-    const previousMonthStart = getMonthStart(year, month - 1);
-    const currentMonthStart = getMonthStart(year, month);
-    const nextMonthStart = getMonthStart(year, month + 1);
+    const { previousMonthStart, currentMonthStart, nextMonthStart } =
+      getMonthBoundaries();
 
     const [currentMonthResult, previousMonthResult] = await Promise.all([
       ctx.supabaseAdmin
