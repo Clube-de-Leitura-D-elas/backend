@@ -30,7 +30,7 @@ export async function requireRole(
 
   if (error) {
     console.error(`${scope} check error`, oneLine(error.message));
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 
   const role = profile?.app_role as AppRole | undefined;
