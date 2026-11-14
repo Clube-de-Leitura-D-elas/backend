@@ -1,12 +1,18 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { withSupabase } from "jsr:@supabase/server@^1";
+import { type SupabaseContext, withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { type PushMessage, sendFcmMessage } from "../_shared/fcm.ts";
 import { oneLine } from "../_shared/log.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
 const LOG_LABEL = "send-push";
-const MAX_TARGETS = 500;
+// Os ids vão na URL da consulta (`.in()`), e o PostgREST recusa URL acima de
+// ~8 KB: com 250 uuids a consulta já falhava com "URI too long". 100 deixa
+// folga, e a função SQL send_push_for_targets manda lotes desse mesmo tamanho.
+const MAX_TARGETS = 100;
+// Menor que o max_rows do projeto (1000), para a paginação nunca confundir
+// "página cheia" com "última página".
+const DEVICE_PAGE_SIZE = 500;
 // Envios simultâneos ao FCM: sem limite, um aviso para o clube inteiro abriria
 // centenas de conexões de uma vez.
 const SEND_CONCURRENCY = 20;
@@ -55,18 +61,11 @@ Deno.serve(withSupabase<Database>({ auth: "secret" }, async (req, ctx) => {
   if (targets.length === 0) return Response.json(summary([]));
 
   const userIds = [...new Set(targets.map((target) => target.user_id))];
-  const { data: deviceData, error: deviceError } = await ctx.supabaseAdmin
-    .from("user_devices")
-    .select("user_id, fcm_token")
-    .in("user_id", userIds);
-
-  if (deviceError) {
-    console.error(`${LOG_LABEL} devices error`, oneLine(deviceError.message));
-    return serverError();
-  }
+  const devices = await loadDevices(ctx, userIds);
+  if (!devices) return serverError();
 
   const tokensByUser = new Map<string, string[]>();
-  for (const device of deviceData ?? []) {
+  for (const device of devices) {
     const tokens = tokensByUser.get(device.user_id) ?? [];
     tokens.push(device.fcm_token);
     tokensByUser.set(device.user_id, tokens);
@@ -116,6 +115,34 @@ Deno.serve(withSupabase<Database>({ auth: "secret" }, async (req, ctx) => {
 
   return Response.json(summary(results));
 }));
+
+// Uma leitora pode ter vários aparelhos, e o PostgREST corta a resposta em
+// max_rows. Sem paginar, os aparelhos além do corte ficariam sem push, e o
+// alvo já está marcado como enfileirado, então nada os recuperaria. A ordem
+// por id mantém as páginas estáveis.
+async function loadDevices(
+  ctx: SupabaseContext<Database>,
+  userIds: string[],
+): Promise<{ user_id: string; fcm_token: string }[] | null> {
+  const devices: { user_id: string; fcm_token: string }[] = [];
+
+  for (let from = 0;; from += DEVICE_PAGE_SIZE) {
+    const { data, error } = await ctx.supabaseAdmin
+      .from("user_devices")
+      .select("user_id, fcm_token")
+      .in("user_id", userIds)
+      .order("id")
+      .range(from, from + DEVICE_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error(`${LOG_LABEL} devices error`, oneLine(error.message));
+      return null;
+    }
+
+    devices.push(...(data ?? []));
+    if ((data ?? []).length < DEVICE_PAGE_SIZE) return devices;
+  }
+}
 
 async function readTargetIds(req: Request): Promise<string[] | null> {
   let body: Record<string, unknown> | null;

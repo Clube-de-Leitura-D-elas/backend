@@ -53,8 +53,9 @@ CREATE INDEX IF NOT EXISTS notifications_targets_push_pending_idx
   ON public.notifications_targets (notification_id)
   WHERE push_sent_at IS NULL;
 
--- Chama a send-push para os alvos informados (em lotes de 500, o limite da
--- function) e marca push_sent_at. Nunca lança: qualquer erro vira WARNING e
+-- Chama a send-push para os alvos informados (em lotes de 100, o limite da
+-- function: os ids vão na URL da consulta e acima disso ela estoura) e marca
+-- push_sent_at. Nunca lança: qualquer erro vira WARNING e
 -- desfaz o lote inteiro (as chamadas do pg_net enfileiradas e as marcas), para
 -- o passo diário tentar de novo.
 CREATE OR REPLACE FUNCTION public.send_push_for_targets(p_target_ids uuid[])
@@ -66,7 +67,7 @@ AS $$
 DECLARE
   base_url text;
   api_key text;
-  chunk_size constant integer := 500;
+  chunk_size constant integer := 100;
   chunk uuid[];
   position integer := 1;
 BEGIN
