@@ -1,15 +1,16 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { type SupabaseContext, withSupabase } from "jsr:@supabase/server@^1";
 import { sendApprovalEmail } from "../_shared/approvalEmail.ts";
-import { generateClaimToken } from "../_shared/claimToken.ts";
+import {
+  claimTokenExpiresAt,
+  generateClaimToken,
+} from "../_shared/claimToken.ts";
 import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
 import { oneLine } from "../_shared/log.ts";
 import { readPendingUserId } from "../_shared/pendingUser.ts";
 
 type Ctx = SupabaseContext<Database>;
-
-const CLAIM_TOKEN_TTL_DAYS = 7;
 
 // Aprova uma solicitação pelo painel web. Body JSON: { pending_user_id }.
 //
@@ -29,16 +30,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (denied) return denied;
 
   const claimToken = generateClaimToken();
-  const claimTokenExpiresAt = new Date(
-    Date.now() + CLAIM_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
+  const expiresAt = claimTokenExpiresAt();
 
   const { data: updated, error } = await ctx.supabaseAdmin
     .from("pending_users")
     .update({
       is_approved: true,
       claim_token: claimToken,
-      claim_token_expires_at: claimTokenExpiresAt,
+      claim_token_expires_at: expiresAt,
     })
     .eq("id", pendingUserId)
     .eq("is_approved", false)

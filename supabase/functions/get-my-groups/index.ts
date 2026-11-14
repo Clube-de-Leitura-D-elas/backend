@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
+import { NOT_JOINED_FILTER } from "../_shared/group.ts";
 import { oneLine } from "../_shared/log.ts";
 import { countDoneTasks, TASKS_TOTAL } from "../_shared/meetingTasks.ts";
 
@@ -59,6 +60,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     )
     .eq("user_id", profile.id)
     .eq("groups.is_active", true)
+    .not("registration_status", "in", NOT_JOINED_FILTER)
     .order("group_id");
 
   if (error) {
@@ -85,7 +87,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
   const { data: groupUsers, error: groupUsersError } = await ctx.supabaseAdmin
     .from("group_users")
     .select("group_id")
-    .in("group_id", groupIds);
+    .in("group_id", groupIds)
+    .not("registration_status", "in", NOT_JOINED_FILTER);
 
   if (groupUsersError) {
     console.error(

@@ -67,7 +67,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .supabaseAdmin
     .from("group_users")
     .select("id, group_id")
-    .eq("user_id", profile.id);
+    .eq("user_id", profile.id)
+    .eq("registration_status", "ACTIVE");
 
   if (membershipsError) {
     console.error(

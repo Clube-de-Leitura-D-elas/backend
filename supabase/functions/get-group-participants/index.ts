@@ -1,7 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
-import { readGroupIdParam, requireGroupMember } from "../_shared/group.ts";
+import {
+  NOT_JOINED_FILTER,
+  readGroupIdParam,
+  requireGroupMember,
+} from "../_shared/group.ts";
 import { oneLine } from "../_shared/log.ts";
 import { hasStarted } from "../_shared/meetingTasks.ts";
 import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
@@ -54,7 +58,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("group_users")
     .select("id, is_coordinator, users!inner(id, name, photos(url))")
-    .eq("group_id", groupId);
+    .eq("group_id", groupId)
+    .not("registration_status", "in", NOT_JOINED_FILTER);
 
   if (error) {
     console.error(
