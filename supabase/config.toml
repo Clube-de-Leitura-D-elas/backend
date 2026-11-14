@@ -735,3 +735,8 @@ import_map = "./functions/register-device/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/unregister-device/deno.json"
+
+[functions.send-push]
+enabled = true
+verify_jwt = true
+import_map = "./functions/send-push/deno.json"
