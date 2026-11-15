@@ -9,16 +9,20 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
   const denied = await requireFounder(ctx);
   if (denied) return denied;
 
-  const [citiesResult, groupsResult] = await Promise.all([
+  const [citiesResult, groupsResult, participantsResult] = await Promise.all([
     ctx.supabaseAdmin.from("cities").select("id, name").order("name"),
     ctx.supabaseAdmin
       .from("groups")
       .select("id, number, description, city_id")
       .eq("is_active", true)
       .order("number"),
+    ctx.supabaseAdmin
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("is_active", true),
   ]);
 
-  const error = citiesResult.error ?? groupsResult.error;
+  const error = citiesResult.error ?? groupsResult.error ?? participantsResult.error;
   if (error) {
     console.error("get-participant-filters error", error);
     return Response.json({ error: error.message }, { status: 400 });
@@ -32,6 +36,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     summary: {
       groups: groups.length,
       cities: new Set(groups.map((group) => group.city_id)).size,
+      activeParticipants: participantsResult.count ?? 0,
     },
   });
 }));
