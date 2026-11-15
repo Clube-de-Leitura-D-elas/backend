@@ -645,3 +645,8 @@ import_map = "./functions/get-book-recommendation-groups/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/recommend-book/deno.json"
+
+[functions.get-calendar-groups-web]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-calendar-groups-web/index.ts"
