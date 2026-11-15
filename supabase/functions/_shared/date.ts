@@ -51,3 +51,60 @@ export function formatMeetingWhen(timestamp: string): string | null {
     : `${Number(hour)}h${minute}`;
   return `${day}/${month}, ${clock}`;
 }
+function getMonthStart(year: number, month: number): string {
+  const normalized = new Date(Date.UTC(year, month - 1, 1));
+  const targetYear = normalized.getUTCFullYear();
+  const targetMonth = normalized.getUTCMonth() + 1;
+  const approximate = new Date(
+    Date.UTC(targetYear, targetMonth - 1, 1),
+  );
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: SAO_PAULO,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(approximate);
+
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+
+  const localAsUtc = Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second),
+  );
+
+  const offset = localAsUtc - approximate.getTime();
+
+  return new Date(approximate.getTime() - offset).toISOString();
+}
+
+export function getMonthBoundaries(now = new Date()) {
+  const dateParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: SAO_PAULO,
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(now);
+
+  const year = Number(
+    dateParts.find((part) => part.type === "year")?.value,
+  );
+  const month = Number(
+    dateParts.find((part) => part.type === "month")?.value,
+  );
+
+  return {
+    previousMonthStart: getMonthStart(year, month - 1),
+    currentMonthStart: getMonthStart(year, month),
+    nextMonthStart: getMonthStart(year, month + 1),
+  };
+}
