@@ -5,9 +5,14 @@ import { oneLine } from "../_shared/log.ts";
 import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
 
 const PROFILE_COLUMNS =
-  "id, user_id, name, email, phone, birth_date, instagram, job, level_of_education, is_active, created_at, photos(url)";
+  "id, user_id, name, email, phone, birth_date, instagram, job, level_of_education, is_active, created_at, city_id, zone_id, expectations, has_other_reading_group, wants_to_coordinate, photos(url), cities(id, name), zones(id, name), onboarding_book_suggestions(name)";
 
-type ProfileRow = { photos: { url: string } | null };
+type ProfileRow = {
+  photos: { url: string } | null;
+  cities: { id: string; name: string } | null;
+  zones: { id: string; name: string } | null;
+  onboarding_book_suggestions: { name: string } | { name: string }[] | null;
+};
 
 // Perfil (tabela users) da usuária autenticada.
 // O withSupabase responde o preflight OPTIONS com os headers de CORS e valida o JWT.
@@ -37,7 +42,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ success: true, profile: null });
   }
 
-  const { photos, ...profile } = data as unknown as ProfileRow;
+  const { photos, cities, zones, onboarding_book_suggestions, ...profile } =
+    data as unknown as ProfileRow;
   const photoPath = photos?.url ?? null;
 
   const resolvePhotoUrl = await resolveProfilePhotoUrls(ctx, req, [photoPath]);
@@ -45,6 +51,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   return Response.json({
     success: true,
-    profile: { ...profile, photo_url: resolvePhotoUrl(photoPath) },
+    profile: {
+      ...profile,
+      city: cities ? { id: cities.id, name: cities.name } : null,
+      zone: zones ? { id: zones.id, name: zones.name } : null,
+      book_name: Array.isArray(onboarding_book_suggestions)
+        ? onboarding_book_suggestions[0]?.name ?? null
+        : onboarding_book_suggestions?.name ?? null,
+      photo_url: resolvePhotoUrl(photoPath),
+    },
   });
 }));
