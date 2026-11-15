@@ -32,6 +32,7 @@ Deno.serve(
         { count: "exact" },
       )
       .eq("user_id", participantId)
+      .eq("registration_status", "ACTIVE")
       .order("id")
       .range(from, to);
 

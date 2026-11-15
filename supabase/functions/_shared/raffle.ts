@@ -94,8 +94,8 @@ export async function loadRaffleCandidates(
   const memberRows = (memberData ?? []) as unknown as MemberRow[];
   if (memberRows.length === 0) return [];
 
-  // group_users não tem UNIQUE (group_id, user_id): uma leitora pode ter mais
-  // de um vínculo, e as indicações ficam presas a cada um.
+  // Antes do UNIQUE (group_id, user_id) uma leitora podia ter mais de um
+  // vínculo no grupo, e as indicações ficam presas a cada um.
   const members = new Map<string, { row: MemberRow; linkIds: Set<string> }>();
   for (const row of memberRows) {
     const member = members.get(row.user_id);
@@ -371,9 +371,11 @@ export function toResultJson(
   meetingId: string,
   candidate: RaffleCandidate,
   drawnAt: string | null,
+  nextMeetingId: string | null = null,
 ) {
   return {
     meeting_id: meetingId,
+    next_meeting_id: nextMeetingId,
     winner_id: candidate.userId,
     winner_name: candidate.name,
     winner_avatar_url: candidate.avatarUrl,

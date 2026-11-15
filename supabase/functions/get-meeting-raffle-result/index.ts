@@ -11,6 +11,7 @@ const LOG_LABEL = "get-meeting-raffle-result";
 
 type RaffleRow = {
   meeting_id: string;
+  next_meeting_id: string;
   winner_user_id: string;
   drawn_at: string;
   winner: { name: string; photos: { url: string } | null } | null;
@@ -38,6 +39,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .from("meeting_raffles")
     .select(`
       meeting_id,
+      next_meeting_id,
       winner_user_id,
       drawn_at,
       winner:users!meeting_raffles_winner_user_id_fkey(name, photos(url)),
@@ -62,6 +64,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   return Response.json({
     meeting_id: row.meeting_id,
+    next_meeting_id: row.next_meeting_id,
     winner_id: row.winner_user_id,
     winner_name: row.winner?.name ?? "",
     winner_avatar_url: resolvePhotoUrl(row.winner?.photos?.url),
