@@ -43,9 +43,11 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         .order("number");
 
     if (error) {
-        console.error("get-calendar-groups error", error);
+        console.error(
+            "get-calendar-groups-web consulta", error);
+
         return Response.json(
-            { error: error.message },
+            { error: "Erro interno ao buscar grupos do calendário." },
             { status: 500 },
         );
     }
