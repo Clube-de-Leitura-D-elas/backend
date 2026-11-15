@@ -25,7 +25,7 @@ const STATUS_BY_REGISTRATION: Record<string, MembershipStatus> = {
   PENDING: "PENDING",
 };
 
-export type DiscoveryReader = { profileId: string; cityId: string };
+export type DiscoveryReader = { profileId: string; cityId: string | null };
 
 /**
  * Parâmetro `cityId` das telas de descoberta: uma cidade, `all` (todas) ou

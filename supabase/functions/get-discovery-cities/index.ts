@@ -8,7 +8,8 @@ type City = { id: string; name: string; uf: string };
 
 // Opções do filtro de cidade do calendário e da busca de grupos do app:
 // cidades com grupo ativo, mais a da leitora (o filtro abre nela, mesmo sem
-// grupo), em ordem alfabética. `reader_city_id` é a seleção inicial.
+// grupo), em ordem alfabética. `reader_city_id` é a seleção inicial e vem null
+// para quem ficou sem cidade no cadastro (cidade digitada não casou).
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "GET") {
     return Response.json({ error: "expected GET request" }, { status: 405 });
@@ -22,11 +23,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       .from("groups")
       .select("cities(id, name, uf)")
       .eq("is_active", true),
-    ctx.supabaseAdmin
-      .from("cities")
-      .select("id, name, uf")
-      .eq("id", reader.cityId)
-      .maybeSingle(),
+    // `.eq("id", null)` vira `id=eq.null` e o PostgREST responde 400.
+    reader.cityId
+      ? ctx.supabaseAdmin
+        .from("cities")
+        .select("id, name, uf")
+        .eq("id", reader.cityId)
+        .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
   const error = groups.error ?? readerCity.error;
