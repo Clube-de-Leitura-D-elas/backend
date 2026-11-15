@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
-import { requireFounder } from "../_shared/founder.ts";
+import { requireRole } from "../_shared/role.ts";
 
 
 export type CalendarGroup = {
@@ -25,7 +25,7 @@ type CalendarGroupQuery = {
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
-    const denied = await requireFounder(ctx);
+    const denied = await requireRole(ctx, ["MANAGER", "FOUNDER"], "management");
     if (denied) return denied;
 
     const { data, error } = await ctx.supabaseAdmin
