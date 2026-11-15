@@ -2,7 +2,6 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
-import { NOT_JOINED_FILTER } from "../_shared/group.ts";
 import { parseListParams } from "../_shared/pagination.ts";
 import { readParticipantIdParam } from "../_shared/participant.ts";
 import { toLocalDate } from "../_shared/date.ts";
@@ -33,7 +32,7 @@ Deno.serve(
         { count: "exact" },
       )
       .eq("user_id", participantId)
-      .not("registration_status", "in", NOT_JOINED_FILTER)
+      .eq("registration_status", "ACTIVE")
       .order("id")
       .range(from, to);
 
