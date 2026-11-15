@@ -65,9 +65,12 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (error) {
     if (error.code === UNIQUE_VIOLATION) return raffleAlreadyRecorded();
     if (error.code === SUGGESTION_UNAVAILABLE) {
-      return Response.json({ error: "book suggestion is no longer available" }, {
-        status: 409,
-      });
+      return Response.json(
+        { error: "book suggestion is no longer available" },
+        {
+          status: 409,
+        },
+      );
     }
     if (error.code === BOOK_ALREADY_DRAWN) {
       return Response.json({ error: "book already drawn in this group" }, {
@@ -80,8 +83,11 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     });
   }
 
-  const drawnAt = (data as { drawn_at: string }).drawn_at;
-  return Response.json(toResultJson(meetingId, winner, drawnAt), {
-    status: 201,
-  });
+  const raffle = data as { drawn_at: string; next_meeting_id: string };
+  return Response.json(
+    toResultJson(meetingId, winner, raffle.drawn_at, raffle.next_meeting_id),
+    {
+      status: 201,
+    },
+  );
 }));

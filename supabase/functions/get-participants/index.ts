@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
+import { NOT_JOINED_FILTER } from "../_shared/group.ts";
 import { parseListParams } from "../_shared/pagination.ts";
 
 // Lista paginada de participantes (tabela users) para o painel web.
@@ -20,11 +21,17 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     ? "id, name, is_active, group_users(id), in_group:group_users!inner(group_id)"
     : "id, name, is_active, group_users(id)";
 
-  let query = ctx.supabaseAdmin.from("users").select(columns, { count: "exact" });
+  let query = ctx.supabaseAdmin.from("users").select(columns, {
+    count: "exact",
+  })
+    .not("group_users.registration_status", "in", NOT_JOINED_FILTER);
 
   if (search) query = query.ilike("name", `%${search}%`);
   if (cityId) query = query.eq("city_id", cityId);
-  if (groupId) query = query.eq("in_group.group_id", groupId);
+  if (groupId) {
+    query = query.eq("in_group.group_id", groupId)
+      .not("in_group.registration_status", "in", NOT_JOINED_FILTER);
+  }
 
   const { data, error, count } = await query
     .order(order.column, { ascending: order.ascending })

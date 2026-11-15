@@ -28,7 +28,12 @@ type GroupRow = {
 };
 
 type CoordinatorRow = {
-  users: { name: string; email: string; photos: {url:string}|null};
+  users: {
+    id: string;
+    name: string;
+    email: string;
+    photos: { url: string } | null;
+  };
 };
 
 type NextMeetingRow = {
@@ -39,7 +44,7 @@ type NextMeetingRow = {
 };
 
 // Cabeçalho da tela de detalhes do grupo no painel web: identificação do grupo,
-// coordenadora responsável e próximo encontro agendado.
+// coordenadoras e próximo encontro agendado.
 // Query string: groupId.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "GET") {
@@ -63,7 +68,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       "get-group-details-web group error",
       oneLine(groupError.message),
     );
-    return Response.json({ error: groupError.message }, { status: 500 });
+    return Response.json({ error: "unable to load group" }, { status: 500 });
   }
 
   if (!groupData) {
@@ -81,15 +86,15 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       .eq("registration_status", ACTIVE_REGISTRATION)
       .eq("users.is_active", true),
 
+    // Todas as coordenadoras ativas; a ordem estável é aplicada abaixo, porque
+    // o `order` do PostgREST não ordena a linha pai pela coluna do embed.
     ctx.supabaseAdmin
       .from("group_users")
-      .select("users!inner(name, email, photos(url))")
+      .select("users!inner(id, name, email, photos(url))")
       .eq("group_id", groupId)
       .eq("is_coordinator", true)
       .eq("registration_status", ACTIVE_REGISTRATION)
-      .order("id")
-      .limit(1)
-      .maybeSingle(),
+      .eq("users.is_active", true),
 
     ctx.supabaseAdmin
       .from("meetings")
@@ -113,18 +118,34 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       "get-group-details-web details error",
       oneLine(error.message),
     );
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "unable to load group" }, { status: 500 });
   }
 
-  const coordinator = coordinatorResult.data as unknown as
-    | CoordinatorRow
-    | null;
+  const coordinatorRows = (coordinatorResult.data ?? []) as unknown as
+    CoordinatorRow[];
   const meeting = meetingResult.data as unknown as NextMeetingRow | null;
 
-  const resolvePhotoUrl = await resolveProfilePhotoUrls(ctx, req, [
-    coordinator?.users.photos?.url,
-  ]);
+  const resolvePhotoUrl = await resolveProfilePhotoUrls(
+    ctx,
+    req,
+    coordinatorRows.map((row) => row.users.photos?.url),
+  );
   if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
+
+  const coordinators = coordinatorRows
+    .toSorted((a, b) =>
+      a.users.name.localeCompare(b.users.name, "pt-BR") ||
+      a.users.id.localeCompare(b.users.id)
+    )
+    .map(({ users }) => ({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      photo: resolvePhotoUrl(users.photos?.url),
+    }));
+  // Campos legados: o painel web em produção ainda lê só uma coordenadora.
+  // Saem em PR próprio depois que o web migrar para `coordinators`.
+  const firstCoordinator = coordinators[0];
 
   return Response.json({
     id: group.id,
@@ -134,9 +155,10 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     zone: group.zones?.name ?? null,
     is_active: group.is_active,
     active_participants_count: countResult.count ?? 0,
-    coordinator_name: coordinator?.users.name ?? null,
-    coordinator_email: coordinator?.users.email ?? null,
-    coordinator_photo: resolvePhotoUrl(coordinator?.users.photos?.url),
+    coordinators,
+    coordinator_name: firstCoordinator?.name ?? null,
+    coordinator_email: firstCoordinator?.email ?? null,
+    coordinator_photo: firstCoordinator?.photo ?? null,
     next_meeting: meeting
       ? {
         date: meeting.date,

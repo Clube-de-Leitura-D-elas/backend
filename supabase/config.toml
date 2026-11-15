@@ -469,6 +469,11 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/get-my-groups/deno.json"
 
+[functions.get-my-profile-summary]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-my-profile-summary/deno.json"
+
 [functions.get-group-next-event]
 enabled = true
 verify_jwt = true
@@ -611,6 +616,51 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/set-profile-photo/deno.json"
 
+[functions.request-meeting-participation]
+enabled = true
+verify_jwt = true
+import_map = "./functions/request-meeting-participation/deno.json"
+
+[functions.get-meeting-guest-requests]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-meeting-guest-requests/deno.json"
+
+[functions.review-meeting-guest-request]
+enabled = true
+verify_jwt = true
+import_map = "./functions/review-meeting-guest-request/deno.json"
+
+[functions.request-group-join]
+enabled = true
+verify_jwt = true
+import_map = "./functions/request-group-join/deno.json"
+
+[functions.get-group-join-requests]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-group-join-requests/deno.json"
+
+[functions.review-group-join-request]
+enabled = true
+verify_jwt = true
+import_map = "./functions/review-group-join-request/deno.json"
+
+[functions.get-city-calendar]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-city-calendar/deno.json"
+
+[functions.get-city-groups]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-city-groups/deno.json"
+
+[functions.get-discovery-cities]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-discovery-cities/deno.json"
+
 [functions.get-user-profile-web]
 enabled = true
 verify_jwt = true
@@ -650,3 +700,32 @@ import_map = "./functions/recommend-book/deno.json"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/get-calendar-groups-web/index.ts"
+[functions.get-my-reviewed-books]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-my-reviewed-books/deno.json"
+
+[functions.search-books]
+enabled = true
+verify_jwt = true
+import_map = "./functions/search-books/deno.json"
+
+[functions.accept-pending-user]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/accept-pending-user/index.ts"
+
+[functions.resend-claim-token-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/resend-claim-token-web/deno.json"
+
+[functions.get-dashboard-registrations-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-dashboard-registrations-web/deno.json"
+
+[functions.get-dashboard-kpis-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-dashboard-kpis-web/deno.json"
