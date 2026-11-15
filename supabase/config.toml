@@ -696,6 +696,10 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/recommend-book/deno.json"
 
+[functions.get-calendar-groups-web]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-calendar-groups-web/index.ts"
 [functions.get-my-reviewed-books]
 enabled = true
 verify_jwt = true

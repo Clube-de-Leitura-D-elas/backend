@@ -11,6 +11,7 @@ type GroupRow = {
   number: number;
   description: string;
   cities: {
+    id: string;
     name: string;
     uf: string;
   } | null;
@@ -27,7 +28,9 @@ type CalendarEvent = {
   id: string;
   groupId: string;
   groupName: string;
+  cityId: string;
   city: string;
+  state: string;
   startsAt: string;
   status: string;
 };
@@ -171,7 +174,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   // Busca grupos ativos, incluindo os dados da cidade.
   let groupsQuery = ctx.supabaseAdmin
     .from("groups")
-    .select("id, number, description, cities(name, uf)")
+    .select("id, number, description, cities(id, name, uf)")
     .eq("is_active", true);
 
   if (groupId) {
@@ -262,7 +265,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       groupId: group.id,
       groupName:
         `Grupo ${String(group.number).padStart(2, "0")} — ${group.description}`,
+      cityId: group.cities?.id ?? "",
       city: group.cities?.name ?? "",
+      state: group.cities?.uf ?? "",
       startsAt: meeting.date,
       status: meeting.status,
     });
