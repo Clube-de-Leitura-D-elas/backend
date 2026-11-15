@@ -67,10 +67,28 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   );
   if (canManageTasks instanceof Response) return canManageTasks;
 
+  // can_manage_tasks junta anfitriã e coordenadora. O banner precisa dos
+  // papéis separados: quem acumula os dois vê o texto de anfitriã.
+  const { data: role, error: roleError } = await ctx.supabaseAdmin
+    .from("group_users")
+    .select("id, is_coordinator")
+    .eq("group_id", meeting.group_id)
+    .eq("user_id", member.profileId)
+    .maybeSingle();
+
+  if (roleError) {
+    console.error("get-meeting-tasks role error", oneLine(roleError.message));
+    return Response.json({ error: "Unable to load meeting tasks" }, {
+      status: 500,
+    });
+  }
+
   return Response.json({
     meeting_id: meeting.id,
     status: meeting.status,
     can_manage_tasks: canManageTasks,
+    is_host: role?.id === meeting.host_id,
+    is_coordinator: role?.is_coordinator === true,
     can_conclude: canManageTasks && canConclude(meeting),
     // Quem saiu do sorteio sem concluir precisa conseguir voltar a ele.
     can_raffle: canManageTasks && RECORD_STATUSES.includes(meeting.status) &&
