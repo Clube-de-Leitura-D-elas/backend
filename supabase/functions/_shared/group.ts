@@ -161,6 +161,43 @@ export async function requireGroupCoordinator(
   return null;
 }
 
+export async function requireGroupCoordinatorProfile(
+  ctx: SupabaseContext<Database>,
+  groupId: string,
+  logLabel: string,
+): Promise<{ profileId: string } | Response> {
+  const authUserId = ctx.userClaims?.id;
+  if (!authUserId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("group_users")
+    .select("user_id, users!inner(user_id, is_active)")
+    .eq("group_id", groupId)
+    .eq("users.user_id", authUserId)
+    .eq("users.is_active", true)
+    .eq("is_coordinator", true)
+    .eq("registration_status", "ACTIVE")
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`${logLabel} coordinator error`, oneLine(error.message));
+    return Response.json({ error: "Unable to check group coordinator" }, {
+      status: 500,
+    });
+  }
+
+  if (!data) {
+    return Response.json({ error: "Forbidden: group coordinators only" }, {
+      status: 403,
+    });
+  }
+
+  return { profileId: data.user_id };
+}
+
 export async function isGroupCoordinatorOrMeetingHost(
   ctx: SupabaseContext<Database>,
   groupId: string,

@@ -57,6 +57,63 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: countError.message }, { status: 500 });
   }
 
+  const authUserId = ctx.userClaims?.id;
+  const { data: userMember } = await ctx.supabaseAdmin
+    .from("group_users")
+    .select("is_coordinator, users!inner(user_id)")
+    .eq("group_id", groupId)
+    .eq("users.user_id", authUserId)
+    .eq("registration_status", "ACTIVE")
+    .limit(1)
+    .maybeSingle();
+
+  const isCoordinator = Boolean(userMember?.is_coordinator);
+
+  const { data: meetings } = await ctx.supabaseAdmin
+    .from("meetings")
+    .select("id, status")
+    .eq("group_id", groupId)
+    .order("date", { ascending: true })
+    .order("id", { ascending: true });
+
+  const openMeeting = (meetings ?? []).find((m) => m.status !== "ENDED");
+
+  let pendingRaffle: {
+    type: "INAUGURAL" | "PENDING";
+    meeting_id?: string;
+    group_id: string;
+  } | null = null;
+
+  if (!openMeeting && isCoordinator) {
+    if ((meetings ?? []).length === 0) {
+      const { count: inauguralCount } = await ctx.supabaseAdmin
+        .from("meeting_raffles")
+        .select("id", { count: "exact", head: true })
+        .eq("group_id", groupId)
+        .is("meeting_id", null);
+
+      if ((inauguralCount ?? 0) === 0) {
+        pendingRaffle = { type: "INAUGURAL", group_id: groupId };
+      }
+    } else {
+      const lastMeeting = meetings![meetings!.length - 1];
+      if (lastMeeting.status === "ENDED") {
+        const { count: raffleCount } = await ctx.supabaseAdmin
+          .from("meeting_raffles")
+          .select("id", { count: "exact", head: true })
+          .eq("meeting_id", lastMeeting.id);
+
+        if ((raffleCount ?? 0) === 0) {
+          pendingRaffle = {
+            type: "PENDING",
+            meeting_id: lastMeeting.id,
+            group_id: groupId,
+          };
+        }
+      }
+    }
+  }
+
   const typedGroup = group as unknown as GroupRow;
 
   return Response.json({
@@ -69,5 +126,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     state_code: typedGroup.cities?.uf ?? null,
     cover_image_url: typedGroup.photos?.url ?? null,
     whatsapp_url: typedGroup.whatsapp_link,
+    has_open_meeting: Boolean(openMeeting),
+    open_meeting_status: openMeeting ? openMeeting.status : null,
+    pending_raffle: pendingRaffle,
   });
 }));

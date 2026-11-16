@@ -5,12 +5,13 @@ import { requireGroupMember } from "../_shared/group.ts";
 import { oneLine } from "../_shared/log.ts";
 import { findMeetingGroupId } from "../_shared/meeting.ts";
 import { resolveProfilePhotoUrls } from "../_shared/profilePhoto.ts";
-import { readJsonBody, readMeetingId } from "../_shared/raffle.ts";
+import { readJsonBody, readRaffleTarget } from "../_shared/raffle.ts";
 
 const LOG_LABEL = "get-meeting-raffle-result";
 
 type RaffleRow = {
-  meeting_id: string;
+  meeting_id: string | null;
+  group_id: string;
   next_meeting_id: string;
   winner_user_id: string;
   drawn_at: string;
@@ -26,27 +27,46 @@ type RaffleRow = {
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const body = await readJsonBody(req);
   if (body instanceof Response) return body;
-  const meetingId = readMeetingId(body);
-  if (meetingId instanceof Response) return meetingId;
+  const target = readRaffleTarget(body);
+  if (target instanceof Response) return target;
 
-  const groupId = await findMeetingGroupId(ctx, meetingId, LOG_LABEL);
-  if (groupId instanceof Response) return groupId;
+  let groupId = target.groupId;
+  if (!groupId && target.meetingId) {
+    const foundGroupId = await findMeetingGroupId(
+      ctx,
+      target.meetingId,
+      LOG_LABEL,
+    );
+    if (foundGroupId instanceof Response) return foundGroupId;
+    groupId = foundGroupId;
+  }
+
+  if (!groupId) {
+    return Response.json({ error: "group not found" }, { status: 404 });
+  }
 
   const denied = await requireGroupMember(ctx, groupId);
   if (denied) return denied;
 
-  const { data, error } = await ctx.supabaseAdmin
+  let query = ctx.supabaseAdmin
     .from("meeting_raffles")
     .select(`
       meeting_id,
+      group_id,
       next_meeting_id,
       winner_user_id,
       drawn_at,
       winner:users!meeting_raffles_winner_user_id_fkey(name, photos(url)),
       books(name, author, photos(url))
-    `)
-    .eq("meeting_id", meetingId)
-    .maybeSingle();
+    `);
+
+  if (target.type === "inaugural") {
+    query = query.eq("group_id", target.groupId).is("meeting_id", null);
+  } else {
+    query = query.eq("meeting_id", target.meetingId);
+  }
+
+  const { data, error } = await query.maybeSingle();
   if (error) {
     console.error(`${LOG_LABEL} error`, oneLine(error.message));
     return Response.json({ error: "Unable to load raffle result" }, {
@@ -64,6 +84,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   return Response.json({
     meeting_id: row.meeting_id,
+    group_id: row.group_id,
     next_meeting_id: row.next_meeting_id,
     winner_id: row.winner_user_id,
     winner_name: row.winner?.name ?? "",
