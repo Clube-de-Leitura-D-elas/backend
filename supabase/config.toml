@@ -738,3 +738,8 @@ import_map = "./functions/get-dashboard-kpis-web/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/get-dashboard-absences-web/deno.json"
+
+[functions.update-user-profile]
+enabled = true
+verify_jwt = true
+import_map = "./functions/update-user-profile/deno.json"
