@@ -17,10 +17,12 @@
 -- Sem os dois secrets, nada é enviado, o insert da notificação segue normal e
 -- fica um WARNING no log do Postgres.
 --
--- push_sent_at marca o alvo cujo envio foi ENFILEIRADO no pg_net, não
--- entregue: o resultado do FCM não volta para o banco, e quem trata token
--- inválido e falha é a send-push (só loga). NULL significa "ainda não
--- enfileirado", e é o que o passo diário send_pending_pushes procura.
+-- push_sent_at é gravado pela send-push, depois de carregar os aparelhos e
+-- ANTES de falar com o FCM: marca "reivindicado para envio", não entregue. O
+-- UPDATE condicional (push_sent_at IS NULL) é atômico, então o gatilho e o
+-- passo diário disputando o mesmo alvo não geram push duplicado. NULL
+-- significa "ainda não reivindicado", e é o que o passo diário
+-- send_pending_pushes procura. Erro do FCM depois da marca só é logado.
 --
 -- Backfill: alvos cuja notificação já apareceu (scheduled_for <= agora)
 -- ganham push_sent_at = agora, senão o primeiro passo diário dispararia push
@@ -32,7 +34,8 @@
 -- Paulo. Um aviso agendado para as 15h só sai por push no dia seguinte às
 -- 09:00 (a notificação in-app aparece às 15h). Avisos criados já devidos saem
 -- na hora, pelo gatilho. Quem falhou no gatilho (secret ausente, erro do
--- pg_net) é reenviado pelo passo diário; avisos devidos há mais de 2 dias são
+-- pg_net, send-push fora do ar ou com erro antes de enviar) é reenviado pelo
+-- passo diário; avisos devidos há mais de 2 dias são
 -- descartados do push (marcados como tratados) para um problema de
 -- configuração resolvido tarde não despejar um monte de avisos velhos.
 
@@ -54,10 +57,11 @@ CREATE INDEX IF NOT EXISTS notifications_targets_push_pending_idx
   WHERE push_sent_at IS NULL;
 
 -- Chama a send-push para os alvos informados (em lotes de 100, o limite da
--- function: os ids vão na URL da consulta e acima disso ela estoura) e marca
--- push_sent_at. Nunca lança: qualquer erro vira WARNING e
--- desfaz o lote inteiro (as chamadas do pg_net enfileiradas e as marcas), para
--- o passo diário tentar de novo.
+-- function: os ids vão na URL da consulta e acima disso ela estoura). NÃO marca
+-- push_sent_at: quem marca é a send-push, depois de carregar os aparelhos. Se
+-- a chamada falhar (401, 500, timeout), o alvo continua NULL e o passo diário
+-- tenta de novo. Nunca lança: qualquer erro vira WARNING e desfaz as chamadas
+-- do pg_net enfileiradas.
 CREATE OR REPLACE FUNCTION public.send_push_for_targets(p_target_ids uuid[])
 RETURNS void
 LANGUAGE plpgsql
@@ -100,10 +104,6 @@ BEGIN
       body := jsonb_build_object('target_ids', to_jsonb(chunk)),
       timeout_milliseconds := 30000
     );
-
-    UPDATE public.notifications_targets
-    SET push_sent_at = now()
-    WHERE id = ANY (chunk);
 
     position := position + chunk_size;
   END LOOP;

@@ -288,14 +288,17 @@ Limites que valem conhecer:
 
 - Um aviso agendado para as 15h aparece no app às 15h, mas o push só sai no dia seguinte às 09:00.
   Avisos criados já devidos saem na hora.
-- `notifications_targets.push_sent_at` marca o envio **enfileirado** no `pg_net`, não entregue.
-  Se o gatilho não conseguir enfileirar (secret ausente), o passo diário tenta de novo; avisos
-  devidos há mais de 2 dias são descartados do push.
+- `notifications_targets.push_sent_at` é gravado pela `send-push` depois de carregar os aparelhos
+  e antes de falar com o FCM: marca "reivindicado para envio", não entregue. O `UPDATE` é
+  condicional, então gatilho e agendador disputando o mesmo alvo não duplicam o push. Se o gatilho
+  não conseguir chamar a `send-push` (secret ausente, 401, 500, timeout), o alvo segue `NULL` e o
+  passo diário tenta de novo; avisos devidos há mais de 2 dias são descartados do push.
 - Erro temporário do FCM (`UNAVAILABLE`, `QUOTA_EXCEEDED`, `INTERNAL`) é só logado, não há nova
   tentativa: aquele push se perde, a notificação in-app continua.
 - `register-device` e `unregister-device` são as functions que o app chama (auth de leitora). A
   `send-push` só aceita a chave secreta do projeto (`auth: "secret"`); leitora, chave `anon` e
-  chamada sem credencial recebem 401.
+  chamada sem credencial recebem 401. Ela tem `verify_jwt = false` no `config.toml` porque a chave
+  `sb_secret_...` não é JWT e o gateway a recusaria; a proteção é o `auth: "secret"` do código.
 
 #### Configurar a credencial do Firebase
 

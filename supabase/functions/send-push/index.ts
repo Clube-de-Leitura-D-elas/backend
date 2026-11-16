@@ -16,6 +16,9 @@ const DEVICE_PAGE_SIZE = 500;
 // Envios simultâneos ao FCM: sem limite, um aviso para o clube inteiro abriria
 // centenas de conexões de uma vez.
 const SEND_CONCURRENCY = 20;
+// Tokens por DELETE de token inválido: 20 x ~160 caracteres fica bem abaixo do
+// limite de URL.
+const DELETE_CHUNK_SIZE = 20;
 
 type TargetRow = {
   id: string;
@@ -62,7 +65,19 @@ Deno.serve(withSupabase<Database>({ auth: "secret" }, async (req, ctx) => {
 
   const userIds = [...new Set(targets.map((target) => target.user_id))];
   const devices = await loadDevices(ctx, userIds);
+  // Falhou antes de reivindicar: push_sent_at segue NULL e o passo diário
+  // send_pending_pushes tenta de novo.
   if (!devices) return serverError();
+
+  // Reivindica os alvos só depois de ter os aparelhos. O UPDATE condicional é
+  // atômico: se o gatilho e o agendador chegarem juntos ao mesmo alvo, só um
+  // recebe a linha de volta e envia, sem push duplicado.
+  const claimedIds = await claimTargets(
+    ctx,
+    targets.map((target) => target.id),
+  );
+  if (!claimedIds) return serverError();
+  const claimedTargets = targets.filter((target) => claimedIds.has(target.id));
 
   const tokensByUser = new Map<string, string[]>();
   for (const device of devices) {
@@ -71,7 +86,7 @@ Deno.serve(withSupabase<Database>({ auth: "secret" }, async (req, ctx) => {
     tokensByUser.set(device.user_id, tokens);
   }
 
-  const deliveries: Delivery[] = targets.flatMap((target) =>
+  const deliveries: Delivery[] = claimedTargets.flatMap((target) =>
     (tokensByUser.get(target.user_id) ?? []).map((token) => ({ target, token }))
   );
 
@@ -100,11 +115,14 @@ Deno.serve(withSupabase<Database>({ auth: "secret" }, async (req, ctx) => {
 
   // O FCM disse que o token não existe mais: sai de user_devices para as
   // próximas notificações não tentarem de novo. Falha aqui só gera log.
-  if (invalidTokens.length > 0) {
+  // Em lotes: o token vai na URL do DELETE e tem 160+ caracteres, então uma
+  // lista grande estouraria o limite de URL do PostgREST (como nos ids dos
+  // alvos) e nenhum token inválido seria apagado.
+  for (let i = 0; i < invalidTokens.length; i += DELETE_CHUNK_SIZE) {
     const { error: deleteError } = await ctx.supabaseAdmin
       .from("user_devices")
       .delete()
-      .in("fcm_token", invalidTokens);
+      .in("fcm_token", invalidTokens.slice(i, i + DELETE_CHUNK_SIZE));
     if (deleteError) {
       console.error(
         `${LOG_LABEL} invalid token delete error`,
@@ -116,31 +134,56 @@ Deno.serve(withSupabase<Database>({ auth: "secret" }, async (req, ctx) => {
   return Response.json(summary(results));
 }));
 
+// Marca push_sent_at e devolve os ids que ESTA chamada reivindicou. Alvo já
+// marcado por outra chamada (gatilho x agendador) não volta e não é reenviado.
+async function claimTargets(
+  ctx: SupabaseContext<Database>,
+  targetIds: string[],
+): Promise<Set<string> | null> {
+  const { data, error } = await ctx.supabaseAdmin
+    .from("notifications_targets")
+    .update({ push_sent_at: new Date().toISOString() })
+    .in("id", targetIds)
+    .is("push_sent_at", null)
+    .select("id");
+
+  if (error) {
+    console.error(`${LOG_LABEL} claim error`, oneLine(error.message));
+    return null;
+  }
+  return new Set((data ?? []).map((row) => row.id));
+}
+
 // Uma leitora pode ter vários aparelhos, e o PostgREST corta a resposta em
-// max_rows. Sem paginar, os aparelhos além do corte ficariam sem push, e o
-// alvo já está marcado como enfileirado, então nada os recuperaria. A ordem
-// por id mantém as páginas estáveis.
+// max_rows. Sem paginar, os aparelhos além do corte ficariam sem push. A
+// paginação é por cursor (`id` maior que o último lido) e não por offset: com
+// offset, apagar um aparelho já lido desloca as linhas e pula uma não lida.
 async function loadDevices(
   ctx: SupabaseContext<Database>,
   userIds: string[],
 ): Promise<{ user_id: string; fcm_token: string }[] | null> {
   const devices: { user_id: string; fcm_token: string }[] = [];
+  let cursor: string | null = null;
 
-  for (let from = 0;; from += DEVICE_PAGE_SIZE) {
-    const { data, error } = await ctx.supabaseAdmin
+  while (true) {
+    let query = ctx.supabaseAdmin
       .from("user_devices")
-      .select("user_id, fcm_token")
+      .select("id, user_id, fcm_token")
       .in("user_id", userIds)
       .order("id")
-      .range(from, from + DEVICE_PAGE_SIZE - 1);
+      .limit(DEVICE_PAGE_SIZE);
+    if (cursor) query = query.gt("id", cursor);
 
+    const { data, error } = await query;
     if (error) {
       console.error(`${LOG_LABEL} devices error`, oneLine(error.message));
       return null;
     }
 
-    devices.push(...(data ?? []));
-    if ((data ?? []).length < DEVICE_PAGE_SIZE) return devices;
+    const page = data ?? [];
+    devices.push(...page);
+    if (page.length < DEVICE_PAGE_SIZE) return devices;
+    cursor = page[page.length - 1].id;
   }
 }
 

@@ -40,6 +40,7 @@ type CachedAccessToken = { value: string; expiresAt: number };
 let cachedAccount: { source: string; account: ServiceAccount } | null = null;
 let cachedKey: { pem: string; key: CryptoKey } | null = null;
 let cachedToken: CachedAccessToken | null = null;
+let pendingToken: Promise<string | null> | null = null;
 
 export async function sendFcmMessage(
   deviceToken: string,
@@ -157,13 +158,25 @@ function loadServiceAccount(): ServiceAccount | null {
   }
 }
 
-async function getAccessToken(account: ServiceAccount): Promise<string | null> {
+// Com o cache vazio, os envios simultâneos da send-push chegam aqui juntos:
+// todos esperam a mesma requisição em andamento em vez de assinar um JWT e
+// pedir um access token ao Google cada um.
+function getAccessToken(account: ServiceAccount): Promise<string | null> {
   if (
     cachedToken && cachedToken.expiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS
   ) {
-    return cachedToken.value;
+    return Promise.resolve(cachedToken.value);
   }
 
+  pendingToken ??= requestAccessToken(account).finally(() => {
+    pendingToken = null;
+  });
+  return pendingToken;
+}
+
+async function requestAccessToken(
+  account: ServiceAccount,
+): Promise<string | null> {
   try {
     const assertion = await signJwt(account);
     const response = await fetch(OAUTH_TOKEN_URL, {
