@@ -39,11 +39,14 @@ type ProfileUpdate = {
   cityName: string | null;
   zoneName: string | null;
   suggestedBook: string | null;
+  expectations: string | null;
+  hasOtherReadingGroup: boolean | null;
+  wantsToCoordinate: boolean | null;
 };
 
-// Salva a revisão do perfil da leitora autenticada e a indicação de livro.
-// O app manda o formulário inteiro; os campos desconhecidos (`email`,
-// `other_group_interest`, `coordinator_interest`, `expectations`) são ignorados.
+// Salva perfil, indicação e respostas da revisão numa transação só. O app manda
+// o formulário inteiro; `email` continua ignorado porque o login é
+// `auth.users.email`.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const update = await readProfileUpdate(req);
   if (update instanceof Response) return update;
@@ -78,6 +81,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       p_city_name: update.cityName,
       p_zone_name: update.zoneName,
       p_suggested_book: update.suggestedBook,
+      p_expectations: update.expectations,
+      p_has_other_reading_group: update.hasOtherReadingGroup,
+      p_wants_to_coordinate: update.wantsToCoordinate,
     },
   );
 
@@ -129,6 +135,21 @@ async function readProfileUpdate(
   const suggestedBook = readOptionalText(body.suggested_book, "suggested_book");
   if (suggestedBook instanceof Response) return suggestedBook;
 
+  const expectations = readOptionalText(body.expectations, "expectations");
+  if (expectations instanceof Response) return expectations;
+
+  const hasOtherReadingGroup = readOptionalBoolean(
+    body.has_other_reading_group,
+    "has_other_reading_group",
+  );
+  if (hasOtherReadingGroup instanceof Response) return hasOtherReadingGroup;
+
+  const wantsToCoordinate = readOptionalBoolean(
+    body.wants_to_coordinate,
+    "wants_to_coordinate",
+  );
+  if (wantsToCoordinate instanceof Response) return wantsToCoordinate;
+
   return {
     name,
     phone,
@@ -138,6 +159,9 @@ async function readProfileUpdate(
     cityName,
     zoneName,
     suggestedBook,
+    expectations,
+    hasOtherReadingGroup,
+    wantsToCoordinate,
   };
 }
 
@@ -162,6 +186,17 @@ function readOptionalText(
 // O Postgres recusa NUL e surrogate solto em texto: sem isso viraria 500.
 const isPlainText = (value: unknown): value is string =>
   typeof value === "string" && value.isWellFormed() && !value.includes("\0");
+
+function readOptionalBoolean(
+  value: unknown,
+  field: string,
+): boolean | null | Response {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "boolean") {
+    return badRequest(`invalid "${field}"`);
+  }
+  return value;
+}
 
 function readBirthDate(value: unknown): string | Response {
   if (typeof value !== "string") {

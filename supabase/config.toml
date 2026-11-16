@@ -744,8 +744,3 @@ import_map = "./functions/update-user-profile/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/get-cities-and-zones/deno.json"
-
-[functions.save-onboarding-review]
-enabled = true
-verify_jwt = true
-import_map = "./functions/save-onboarding-review/deno.json"
