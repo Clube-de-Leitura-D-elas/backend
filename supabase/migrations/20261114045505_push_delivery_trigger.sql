@@ -59,8 +59,9 @@ CREATE INDEX IF NOT EXISTS notifications_targets_push_pending_idx
 -- Chama a send-push para os alvos informados (em lotes de 100, o limite da
 -- function: os ids vão na URL da consulta e acima disso ela estoura). NÃO marca
 -- push_sent_at: quem marca é a send-push, depois de carregar os aparelhos. Se
--- a chamada falhar (401, 500, timeout), o alvo continua NULL e o passo diário
--- tenta de novo. Nunca lança: qualquer erro vira WARNING e desfaz as chamadas
+-- a chamada falhar ANTES da marca (401, 500, erro ao ler user_devices), o alvo
+-- continua NULL e o passo diário tenta de novo; falha DEPOIS da marca (durante
+-- o envio ao FCM) não tem nova tentativa. Nunca lança: qualquer erro vira WARNING e desfaz as chamadas
 -- do pg_net enfileiradas.
 CREATE OR REPLACE FUNCTION public.send_push_for_targets(p_target_ids uuid[])
 RETURNS void

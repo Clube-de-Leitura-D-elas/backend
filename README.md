@@ -290,9 +290,11 @@ Limites que valem conhecer:
   Avisos criados já devidos saem na hora.
 - `notifications_targets.push_sent_at` é gravado pela `send-push` depois de carregar os aparelhos
   e antes de falar com o FCM: marca "reivindicado para envio", não entregue. O `UPDATE` é
-  condicional, então gatilho e agendador disputando o mesmo alvo não duplicam o push. Se o gatilho
-  não conseguir chamar a `send-push` (secret ausente, 401, 500, timeout), o alvo segue `NULL` e o
-  passo diário tenta de novo; avisos devidos há mais de 2 dias são descartados do push.
+  condicional, então gatilho e agendador disputando o mesmo alvo não duplicam o push. Se a falha vem
+  **antes** da marca (secret ausente, 401 do gateway, erro ao ler `user_devices`, a function
+  caindo ou estourando o tempo ainda ao carregar os aparelhos), o alvo segue `NULL` e o passo diário
+  tenta de novo; avisos devidos há mais de 2 dias são descartados do push. Se o tempo estoura
+  **depois** da marca, durante o envio ao FCM, o alvo já está marcado e não há nova tentativa.
 - Erro temporário do FCM (`UNAVAILABLE`, `QUOTA_EXCEEDED`, `INTERNAL`) é só logado, não há nova
   tentativa: aquele push se perde, a notificação in-app continua.
 - `register-device` e `unregister-device` são as functions que o app chama (auth de leitora). A
