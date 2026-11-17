@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
+import { oneLine } from "../_shared/log.ts";
 import { isUuid } from "../_shared/uuid.ts";
 
 // Ativa ou inativa um grupo. Body JSON: { group_id, is_active }.
@@ -35,6 +36,33 @@ Deno.serve(
         { error: 'missing/invalid "is_active"' },
         { status: 400 },
       );
+    }
+
+    if (isActive) {
+      const { data: group, error: groupError } = await ctx.supabaseAdmin
+        .from("groups")
+        .select("cities(is_active)")
+        .eq("id", groupId)
+        .maybeSingle();
+
+      if (groupError) {
+        console.error(
+          "update-group-status-web city",
+          oneLine(groupError.message),
+        );
+        return Response.json({ error: "Unable to update group" }, {
+          status: 500,
+        });
+      }
+
+      const city = (group as { cities: { is_active: boolean } | null } | null)
+        ?.cities;
+      if (city && !city.is_active) {
+        return Response.json(
+          { error: "group city is inactive", code: "city_inactive" },
+          { status: 409 },
+        );
+      }
     }
 
     const { data, error } = await ctx.supabaseAdmin

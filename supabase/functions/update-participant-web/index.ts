@@ -149,7 +149,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     // A zona precisa ser da cidade escolhida ("Zona Sul" existe em mais de uma).
     const { data: city, error: cityError } = await ctx.supabaseAdmin
         .from("cities")
-        .select("id, zones(id)")
+        .select("id, is_active, zones(id, is_active)")
         .eq("id", cityId)
         .maybeSingle();
 
@@ -169,9 +169,12 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         );
     }
 
-    const cityZones = (city.zones ?? []) as { id: string }[];
+    const cityZones = (city.zones ?? []) as { id: string; is_active: boolean }[];
+    const zone = zoneId === null
+        ? null
+        : cityZones.find((item) => item.id === zoneId);
 
-    if (zoneId !== null && !cityZones.some((zone) => zone.id === zoneId)) {
+    if (zone === undefined) {
         return Response.json(
             { error: "zone does not belong to city" },
             { status: 400 },
@@ -196,7 +199,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         error: currentParticipantError,
     } = await ctx.supabaseAdmin
         .from("users")
-        .select("id, user_id, email")
+        .select("id, user_id, email, city_id, zone_id")
         .eq("id", participantId)
         .maybeSingle();
 
@@ -216,6 +219,20 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
         return Response.json(
             { error: "participant not found" },
             { status: 404 },
+        );
+    }
+
+    if (!city.is_active && cityId !== currentParticipant.city_id) {
+        return Response.json(
+            { error: "city is inactive" },
+            { status: 400 },
+        );
+    }
+
+    if (zone && !zone.is_active && zoneId !== currentParticipant.zone_id) {
+        return Response.json(
+            { error: "zone is inactive" },
+            { status: 400 },
         );
     }
 

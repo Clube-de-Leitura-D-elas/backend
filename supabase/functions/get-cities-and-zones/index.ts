@@ -21,8 +21,16 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const [citiesResult, zonesResult] = await Promise.all([
-    ctx.supabaseAdmin.from("cities").select("id, name, uf").order("name"),
-    ctx.supabaseAdmin.from("zones").select("id, name, city_id").order("name"),
+    ctx.supabaseAdmin
+      .from("cities")
+      .select("id, name, uf")
+      .eq("is_active", true)
+      .order("name"),
+    ctx.supabaseAdmin
+      .from("zones")
+      .select("id, name, city_id")
+      .eq("is_active", true)
+      .order("name"),
   ]);
 
   const error = citiesResult.error ?? zonesResult.error;

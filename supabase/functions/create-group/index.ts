@@ -7,8 +7,14 @@ import { isUuid } from "../_shared/uuid.ts";
 
 const UNIQUE_VIOLATION = "23505";
 
-type CityRow = { id: string; name: string };
-type ZoneRow = { id: string; name: string; city_id: string };
+type CityRow = { id: string; name: string; is_active: boolean };
+type ZoneRow = {
+  id: string;
+  name: string;
+  city_id: string;
+  is_active: boolean;
+  cities: { is_active: boolean } | null;
+};
 type GroupRow = {
   id: string;
   number: number;
@@ -128,7 +134,7 @@ async function resolveLocation(
 ): Promise<Location | Response> {
   const { data: city, error: cityError } = await ctx.supabaseAdmin
     .from("cities")
-    .select("id, name")
+    .select("id, name, is_active")
     .eq("id", id)
     .maybeSingle();
 
@@ -138,12 +144,15 @@ async function resolveLocation(
   }
   if (city) {
     const row = city as CityRow;
+    if (!row.is_active) {
+      return Response.json({ error: "city is inactive" }, { status: 400 });
+    }
     return { cityId: row.id, zoneId: null, description: row.name };
   }
 
   const { data: zone, error: zoneError } = await ctx.supabaseAdmin
     .from("zones")
-    .select("id, name, city_id")
+    .select("id, name, city_id, is_active, cities(is_active)")
     .eq("id", id)
     .maybeSingle();
 
@@ -155,7 +164,10 @@ async function resolveLocation(
     return Response.json({ error: "city or zone not found" }, { status: 404 });
   }
 
-  const row = zone as ZoneRow;
+  const row = zone as unknown as ZoneRow;
+  if (!row.is_active || !row.cities?.is_active) {
+    return Response.json({ error: "zone is inactive" }, { status: 400 });
+  }
   return { cityId: row.city_id, zoneId: row.id, description: row.name };
 }
 
