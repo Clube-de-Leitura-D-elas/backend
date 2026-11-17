@@ -26,7 +26,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
       .order("number"),
     ctx.supabaseAdmin
       .from("users")
-      .select("*", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true })
       .eq("is_active", true),
   ]);
 
