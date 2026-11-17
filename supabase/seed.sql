@@ -171,6 +171,8 @@ INSERT INTO s_members VALUES
   (5, 23, true,  0), (5, 24, false, 0), (5, 25, false, 0), (5, 26, false, 0), (5, 27, false, 0), (5, 28, false, 3),
   (6, 29, true,  0), (6, 30, false, 0), (6, 31, false, 1), (6, 32, false, 0),
   (7,  8, true,  0), (7,  5, false, 0), (7, 10, false, 1),
+  -- Grupo 8 (Novo grupo sem encontros - teste de sorteio inaugural CLU-339)
+  (8,  2, true,  0), (8,  1, true,  0), (8,  3, false, 0), (8,  4, false, 0), (8, 11, false, 0),
   -- Casos da lista de faltas do dashboard (CLU-254)
   (6, 34, false, 3), (1, 35, false, 3), (2, 35, false, 3), (4, 36, false, 2),
   (3, 37, false, 4), (6, 38, false, 2);
@@ -297,7 +299,9 @@ INSERT INTO s_sugs VALUES
   (3, 17,  1, 25), (3, 20, 27, 17), (3, 22, 11, 10), (3, 21, 15,  6), (3, 16, 10,  2),
   (4, 19, 25, 15), (4, 18, 15,  9), (4, 21, 23,  4),
   (5, 24,  1, 22), (5, 28, 24, 11), (5, 26, 22,  7), (5, 23,  2,  3),
-  (6, 30,  1, 19), (6, 31, 17, 13), (6, 32, 18,  8), (6, 29, 23,  2);
+  (6, 30,  1, 19), (6, 31, 17, 13), (6, 32, 18,  8), (6, 29, 23,  2),
+  -- Grupo 8 (indicações ativas para o sorteio inaugural)
+  (8,  2,  1, 10), (8,  3,  3,  8), (8,  4, 15,  5), (8, 11, 25,  3);
 
 -- ---------------------------------------------------------
 -- 3. FOTOS (grupos, capas de livros, fotos de encontros)
@@ -310,7 +314,7 @@ SELECT pg_temp.sid('photo', 'group-' || g),
        'jpg',
        (now() AT TIME ZONE 'America/Sao_Paulo')::date - 200,
        pg_temp.sid('user', '1')
-FROM generate_series(1, 7) AS g
+FROM generate_series(1, 8) AS g
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.photos (id, url, file_extension, uploaded_at, uploaded_by)
@@ -457,7 +461,11 @@ INSERT INTO public.groups (id, number, description, photo_id, city_id, zone_id, 
   (pg_temp.sid('group', '7'), 7,
    'Porto Alegre',
    pg_temp.sid('photo', 'group-7'), pg_temp.cid('poa'), pg_temp.zid('poa-norte'), false,
-   NULL)
+   NULL),
+  (pg_temp.sid('group', '8'), 8,
+   'Porto Alegre',
+   pg_temp.sid('photo', 'group-8'), pg_temp.cid('poa'), pg_temp.zid('poa-sul'), true,
+   'https://chat.whatsapp.com/seedgrupo08')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.group_users (id, group_id, user_id, is_coordinator, registration_status, last_consecutive_absences, created_at)
