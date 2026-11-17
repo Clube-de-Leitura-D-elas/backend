@@ -90,7 +90,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   if (!city.is_active && cityId !== current.city_id) {
-    return Response.json({ error: "city is inactive" }, { status: 400 });
+    return Response.json({ error: "city is inactive", code: "city_inactive" }, {
+      status: 400,
+    });
   }
 
   const cityZones = (city.zones ?? []) as { id: string; is_active: boolean }[];
@@ -104,7 +106,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   if (zone && !zone.is_active && zoneId !== current.zone_id) {
-    return Response.json({ error: "zone is inactive" }, { status: 400 });
+    return Response.json({ error: "zone is inactive", code: "zone_inactive" }, {
+      status: 400,
+    });
   }
 
   const { data, error } = await ctx.supabaseAdmin

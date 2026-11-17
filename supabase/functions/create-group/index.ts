@@ -145,7 +145,9 @@ async function resolveLocation(
   if (city) {
     const row = city as CityRow;
     if (!row.is_active) {
-      return Response.json({ error: "city is inactive" }, { status: 400 });
+      return Response.json({ error: "city is inactive", code: "city_inactive" }, {
+        status: 400,
+      });
     }
     return { cityId: row.id, zoneId: null, description: row.name };
   }
@@ -166,7 +168,9 @@ async function resolveLocation(
 
   const row = zone as unknown as ZoneRow;
   if (!row.is_active || !row.cities?.is_active) {
-    return Response.json({ error: "zone is inactive" }, { status: 400 });
+    return Response.json({ error: "zone is inactive", code: "zone_inactive" }, {
+      status: 400,
+    });
   }
   return { cityId: row.city_id, zoneId: row.id, description: row.name };
 }

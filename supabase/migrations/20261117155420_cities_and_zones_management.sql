@@ -170,6 +170,7 @@ AS $$
           SELECT 1
           FROM public.zones zone
           WHERE zone.city_id = city.id
+            AND zone.is_active
             AND strpos(public.normalize_location_name(zone.name), search.term) > 0
         )
       )

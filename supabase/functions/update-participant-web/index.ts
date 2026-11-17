@@ -224,14 +224,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
     if (!city.is_active && cityId !== currentParticipant.city_id) {
         return Response.json(
-            { error: "city is inactive" },
+            { error: "city is inactive", code: "city_inactive" },
             { status: 400 },
         );
     }
 
     if (zone && !zone.is_active && zoneId !== currentParticipant.zone_id) {
         return Response.json(
-            { error: "zone is inactive" },
+            { error: "zone is inactive", code: "zone_inactive" },
             { status: 400 },
         );
     }
