@@ -767,3 +767,18 @@ import_map = "./functions/unregister-device/deno.json"
 enabled = true
 verify_jwt = false
 import_map = "./functions/send-push/deno.json"
+
+[functions.get-cities-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-cities-web/deno.json"
+
+[functions.save-city-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/save-city-web/deno.json"
+
+[functions.update-city-status-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/update-city-status-web/deno.json"
