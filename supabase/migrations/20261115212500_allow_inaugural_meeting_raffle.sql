@@ -12,7 +12,8 @@
 
 ALTER TABLE public.meeting_raffles
   ADD COLUMN id uuid DEFAULT gen_random_uuid(),
-  ADD COLUMN group_id uuid REFERENCES public.groups(id);
+  ADD COLUMN group_id uuid
+    REFERENCES public.groups(id) ON DELETE RESTRICT;
 
 UPDATE public.meeting_raffles mr
 SET group_id = m.group_id
@@ -23,7 +24,11 @@ WHERE mr.meeting_id = m.id
 ALTER TABLE public.meeting_raffles
   ALTER COLUMN group_id SET NOT NULL,
   DROP CONSTRAINT meeting_raffles_pkey,
+  DROP CONSTRAINT meeting_raffles_meeting_id_fkey,
   ADD CONSTRAINT meeting_raffles_pkey PRIMARY KEY (id),
+  ADD CONSTRAINT meeting_raffles_meeting_group_id_fkey
+    FOREIGN KEY (meeting_id, group_id)
+    REFERENCES public.meetings(id, group_id) ON DELETE RESTRICT,
   ALTER COLUMN meeting_id DROP NOT NULL;
 
 CREATE UNIQUE INDEX meeting_raffles_origin_meeting_unique

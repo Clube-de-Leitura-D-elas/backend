@@ -106,7 +106,13 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
       "id, group_id, host_id, status, date, location_id, locations(name, address), books!inner(name), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_users(user_id, invitation_status), meeting_photos(is_sketch)",
     )
     .in("group_id", groupIds)
-    .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS", "ENDED"])
+    .in("status", [
+      "CREATED",
+      "SCHEDULED",
+      "IN_PROGRESS",
+      "ENDED",
+      "CONCLUDED",
+    ])
     .order("date", { ascending: true })
     .order("id", { ascending: true });
 
@@ -194,7 +200,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
       const pendingMeetings = pendingMeetingsByGroupId.get(group.id) ?? [];
       const upcomingMeeting = upcomingMeetingByGroupId.get(group.id);
       const groupMeetings = meetingsByGroupId.get(group.id) ?? [];
-      const openMeeting = groupMeetings.find((m) => m.status !== "ENDED");
+      const openMeeting = groupMeetings.find((m) =>
+        ["CREATED", "SCHEDULED", "IN_PROGRESS"].includes(m.status)
+      );
       const raffles = rafflesByGroupId.get(group.id) ?? {
         hasInaugural: false,
         meetingIds: new Set(),
@@ -214,7 +222,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
         } else {
           const lastMeeting = groupMeetings[groupMeetings.length - 1];
           if (
-            lastMeeting.status === "ENDED" &&
+            (lastMeeting.status === "ENDED" ||
+              lastMeeting.status === "CONCLUDED") &&
             !raffles.meetingIds.has(lastMeeting.id)
           ) {
             pendingRaffle = {

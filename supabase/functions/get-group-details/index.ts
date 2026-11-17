@@ -6,6 +6,13 @@ import {
   readGroupIdParam,
   requireGroupMember,
 } from "../_shared/group.ts";
+import { oneLine } from "../_shared/log.ts";
+
+const OPEN_MEETING_STATUSES = new Set([
+  "CREATED",
+  "SCHEDULED",
+  "IN_PROGRESS",
+]);
 
 type GroupRow = {
   id: string;
@@ -34,9 +41,11 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (groupError) {
     console.error(
       "get-group-details error",
-      groupError.message.replace(/[\r\n]/g, " "),
+      oneLine(groupError.message),
     );
-    return Response.json({ error: groupError.message }, { status: 500 });
+    return Response.json({ error: "Unable to load group details" }, {
+      status: 500,
+    });
   }
 
   if (!group) {
@@ -52,13 +61,15 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (countError) {
     console.error(
       "get-group-details participant count error",
-      countError.message.replace(/[\r\n]/g, " "),
+      oneLine(countError.message),
     );
-    return Response.json({ error: countError.message }, { status: 500 });
+    return Response.json({ error: "Unable to load group details" }, {
+      status: 500,
+    });
   }
 
   const authUserId = ctx.userClaims?.id;
-  const { data: userMember } = await ctx.supabaseAdmin
+  const { data: userMember, error: userMemberError } = await ctx.supabaseAdmin
     .from("group_users")
     .select("is_coordinator, users!inner(user_id)")
     .eq("group_id", groupId)
@@ -67,16 +78,38 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .limit(1)
     .maybeSingle();
 
+  if (userMemberError) {
+    console.error(
+      "get-group-details membership error",
+      oneLine(userMemberError.message),
+    );
+    return Response.json({ error: "Unable to load group details" }, {
+      status: 500,
+    });
+  }
+
   const isCoordinator = Boolean(userMember?.is_coordinator);
 
-  const { data: meetings } = await ctx.supabaseAdmin
+  const { data: meetings, error: meetingsError } = await ctx.supabaseAdmin
     .from("meetings")
     .select("id, status")
     .eq("group_id", groupId)
     .order("date", { ascending: true })
     .order("id", { ascending: true });
 
-  const openMeeting = (meetings ?? []).find((m) => m.status !== "ENDED");
+  if (meetingsError) {
+    console.error(
+      "get-group-details meetings error",
+      oneLine(meetingsError.message),
+    );
+    return Response.json({ error: "Unable to load group details" }, {
+      status: 500,
+    });
+  }
+
+  const openMeeting = (meetings ?? []).find((m) =>
+    OPEN_MEETING_STATUSES.has(m.status)
+  );
 
   let pendingRaffle: {
     type: "INAUGURAL" | "PENDING";
@@ -86,22 +119,46 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   if (!openMeeting && isCoordinator) {
     if ((meetings ?? []).length === 0) {
-      const { count: inauguralCount } = await ctx.supabaseAdmin
+      const { count: inauguralCount, error: inauguralError } = await ctx
+        .supabaseAdmin
         .from("meeting_raffles")
         .select("id", { count: "exact", head: true })
         .eq("group_id", groupId)
         .is("meeting_id", null);
+
+      if (inauguralError) {
+        console.error(
+          "get-group-details inaugural raffle error",
+          oneLine(inauguralError.message),
+        );
+        return Response.json({ error: "Unable to load group details" }, {
+          status: 500,
+        });
+      }
 
       if ((inauguralCount ?? 0) === 0) {
         pendingRaffle = { type: "INAUGURAL", group_id: groupId };
       }
     } else {
       const lastMeeting = meetings![meetings!.length - 1];
-      if (lastMeeting.status === "ENDED") {
-        const { count: raffleCount } = await ctx.supabaseAdmin
+      if (
+        lastMeeting.status === "ENDED" || lastMeeting.status === "CONCLUDED"
+      ) {
+        const { count: raffleCount, error: raffleError } = await ctx
+          .supabaseAdmin
           .from("meeting_raffles")
           .select("id", { count: "exact", head: true })
           .eq("meeting_id", lastMeeting.id);
+
+        if (raffleError) {
+          console.error(
+            "get-group-details raffle error",
+            oneLine(raffleError.message),
+          );
+          return Response.json({ error: "Unable to load group details" }, {
+            status: 500,
+          });
+        }
 
         if ((raffleCount ?? 0) === 0) {
           pendingRaffle = {

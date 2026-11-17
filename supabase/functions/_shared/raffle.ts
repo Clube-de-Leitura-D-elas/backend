@@ -581,10 +581,31 @@ export async function hasOpenMeeting(
   return (count ?? 0) > 0;
 }
 
+export async function hasAnyMeeting(
+  ctx: Ctx,
+  groupId: string,
+  logLabel: string,
+): Promise<boolean | Response> {
+  const { count, error } = await ctx.supabaseAdmin
+    .from("meetings")
+    .select("id", { count: "exact", head: true })
+    .eq("group_id", groupId);
+  if (error) return dbError(logLabel, "group meetings lookup", error);
+  return (count ?? 0) > 0;
+}
+
 export const meetingAlreadyOpen = () =>
   Response.json({ error: "group already has an open meeting" }, {
     status: 409,
   });
+
+export const inauguralRaffleUnavailable = () =>
+  Response.json(
+    { error: "inaugural raffle requires a group with no meetings" },
+    {
+      status: 409,
+    },
+  );
 
 export const raffleAlreadyRecorded = () =>
   Response.json({ error: "raffle already recorded for this meeting" }, {

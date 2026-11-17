@@ -9,8 +9,10 @@ import { oneLine } from "../_shared/log.ts";
 import { requireMeetingRecordManager } from "../_shared/meetingRecord.ts";
 import {
   badRequest,
+  hasAnyMeeting,
   hasOpenMeeting,
   hasRaffleResult,
+  inauguralRaffleUnavailable,
   loadInauguralCandidates,
   loadRaffleCandidates,
   meetingAlreadyOpen,
@@ -27,6 +29,7 @@ const UNIQUE_VIOLATION = "23505";
 const SUGGESTION_UNAVAILABLE = "P0048";
 const BOOK_ALREADY_DRAWN = "P0049";
 const OPEN_MEETING_EXISTS = "P0050";
+const INAUGURAL_RAFFLE_UNAVAILABLE = "P0051";
 
 // Grava o resultado. Só o winner_id vale: livro, nome e data saem do servidor.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
@@ -48,6 +51,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     const openMeeting = await hasOpenMeeting(ctx, target.groupId, LOG_LABEL);
     if (openMeeting instanceof Response) return openMeeting;
     if (openMeeting) return meetingAlreadyOpen();
+
+    const existingMeeting = await hasAnyMeeting(
+      ctx,
+      target.groupId,
+      LOG_LABEL,
+    );
+    if (existingMeeting instanceof Response) return existingMeeting;
+    if (existingMeeting) return inauguralRaffleUnavailable();
 
     const recorded = await hasRaffleResult(
       ctx,
@@ -83,6 +94,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     if (error) {
       if (error.code === UNIQUE_VIOLATION) return raffleAlreadyRecorded();
       if (error.code === OPEN_MEETING_EXISTS) return meetingAlreadyOpen();
+      if (error.code === INAUGURAL_RAFFLE_UNAVAILABLE) {
+        return inauguralRaffleUnavailable();
+      }
       if (error.code === SUGGESTION_UNAVAILABLE) {
         return Response.json(
           { error: "book suggestion is no longer available" },

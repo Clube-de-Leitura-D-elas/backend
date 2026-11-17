@@ -60,13 +60,24 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   if (!data) {
-    const { data: draftMeeting } = await ctx.supabaseAdmin
+    const { data: draftMeeting, error: draftMeetingError } = await ctx
+      .supabaseAdmin
       .from("meetings")
       .select("id")
       .eq("group_id", groupId)
       .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
       .limit(1)
       .maybeSingle();
+
+    if (draftMeetingError) {
+      console.error(
+        "get-group-next-event draft meeting error",
+        draftMeetingError.message.replace(/[\r\n]/g, " "),
+      );
+      return Response.json({ error: "Unable to load next event" }, {
+        status: 500,
+      });
+    }
 
     return Response.json({
       next_event: null,

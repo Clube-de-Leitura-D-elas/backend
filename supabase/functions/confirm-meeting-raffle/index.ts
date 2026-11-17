@@ -4,8 +4,10 @@ import type { Database } from "../_shared/database.ts";
 import { requireGroupCoordinator } from "../_shared/group.ts";
 import { requireMeetingRecordManager } from "../_shared/meetingRecord.ts";
 import {
+  hasAnyMeeting,
   hasOpenMeeting,
   hasRaffleResult,
+  inauguralRaffleUnavailable,
   loadInauguralCandidates,
   loadRaffleCandidates,
   meetingAlreadyOpen,
@@ -39,6 +41,14 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     const openMeeting = await hasOpenMeeting(ctx, target.groupId, LOG_LABEL);
     if (openMeeting instanceof Response) return openMeeting;
     if (openMeeting) return meetingAlreadyOpen();
+
+    const existingMeeting = await hasAnyMeeting(
+      ctx,
+      target.groupId,
+      LOG_LABEL,
+    );
+    if (existingMeeting instanceof Response) return existingMeeting;
+    if (existingMeeting) return inauguralRaffleUnavailable();
 
     const recorded = await hasRaffleResult(
       ctx,
