@@ -469,6 +469,11 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/get-my-groups/deno.json"
 
+[functions.get-my-profile-summary]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-my-profile-summary/deno.json"
+
 [functions.get-group-next-event]
 enabled = true
 verify_jwt = true
@@ -611,6 +616,51 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/set-profile-photo/deno.json"
 
+[functions.request-meeting-participation]
+enabled = true
+verify_jwt = true
+import_map = "./functions/request-meeting-participation/deno.json"
+
+[functions.get-meeting-guest-requests]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-meeting-guest-requests/deno.json"
+
+[functions.review-meeting-guest-request]
+enabled = true
+verify_jwt = true
+import_map = "./functions/review-meeting-guest-request/deno.json"
+
+[functions.request-group-join]
+enabled = true
+verify_jwt = true
+import_map = "./functions/request-group-join/deno.json"
+
+[functions.get-group-join-requests]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-group-join-requests/deno.json"
+
+[functions.review-group-join-request]
+enabled = true
+verify_jwt = true
+import_map = "./functions/review-group-join-request/deno.json"
+
+[functions.get-city-calendar]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-city-calendar/deno.json"
+
+[functions.get-city-groups]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-city-groups/deno.json"
+
+[functions.get-discovery-cities]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-discovery-cities/deno.json"
+
 [functions.get-user-profile-web]
 enabled = true
 verify_jwt = true
@@ -645,3 +695,75 @@ import_map = "./functions/get-book-recommendation-groups/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/recommend-book/deno.json"
+
+[functions.get-calendar-groups-web]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/get-calendar-groups-web/index.ts"
+[functions.get-my-reviewed-books]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-my-reviewed-books/deno.json"
+
+[functions.search-books]
+enabled = true
+verify_jwt = true
+import_map = "./functions/search-books/deno.json"
+
+[functions.accept-pending-user]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/accept-pending-user/index.ts"
+
+[functions.resend-claim-token-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/resend-claim-token-web/deno.json"
+
+[functions.get-dashboard-registrations-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-dashboard-registrations-web/deno.json"
+
+[functions.get-dashboard-active-participants-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-dashboard-active-participants-web/deno.json"
+[functions.get-dashboard-kpis-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-dashboard-kpis-web/deno.json"
+
+[functions.get-dashboard-absences-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-dashboard-absences-web/deno.json"
+
+[functions.update-user-profile]
+enabled = true
+verify_jwt = true
+import_map = "./functions/update-user-profile/deno.json"
+
+[functions.get-cities-and-zones]
+enabled = true
+verify_jwt = true
+import_map = "./functions/get-cities-and-zones/deno.json"
+
+[functions.register-device]
+enabled = true
+verify_jwt = true
+import_map = "./functions/register-device/deno.json"
+
+[functions.unregister-device]
+enabled = true
+verify_jwt = true
+import_map = "./functions/unregister-device/deno.json"
+
+# verify_jwt = false de propósito: o banco chama esta function por pg_net só com
+# a chave secreta (sb_secret_...) no header apikey, que não é JWT, e o gateway
+# responderia 401. Quem protege é o withSupabase({ auth: "secret" }) no
+# index.ts: leitora, chave anon e chamada sem credencial recebem 401.
+[functions.send-push]
+enabled = true
+verify_jwt = false
+import_map = "./functions/send-push/deno.json"

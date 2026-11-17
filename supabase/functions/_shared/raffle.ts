@@ -94,8 +94,8 @@ export async function loadRaffleCandidates(
   const memberRows = (memberData ?? []) as unknown as MemberRow[];
   if (memberRows.length === 0) return [];
 
-  // group_users não tem UNIQUE (group_id, user_id): uma leitora pode ter mais
-  // de um vínculo, e as indicações ficam presas a cada um.
+  // Antes do UNIQUE (group_id, user_id) uma leitora podia ter mais de um
+  // vínculo no grupo, e as indicações ficam presas a cada um.
   const members = new Map<string, { row: MemberRow; linkIds: Set<string> }>();
   for (const row of memberRows) {
     const member = members.get(row.user_id);
@@ -139,6 +139,76 @@ export async function loadRaffleCandidates(
         exclusionReason: isCurrentHost
           ? CURRENT_HOST_REASON
           : book
+          ? null
+          : own.length > 0
+          ? BOOK_ALREADY_DRAWN_REASON
+          : NO_SUGGESTION_REASON,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+}
+
+/**
+ * Candidatas do sorteio inaugural: todas as integrantes ativas do grupo
+ * (vínculo ACTIVE e conta ativa) que tenham indicação de livro com status
+ * AVAILABLE cujo livro ainda não tenha sido usado no grupo.
+ *
+ * Não exige presença registrada em encontro e não aplica rodízio de anfitriãs.
+ */
+export async function loadInauguralCandidates(
+  ctx: Ctx,
+  req: Request,
+  groupId: string,
+  logLabel: string,
+): Promise<RaffleCandidate[] | Response> {
+  const admin = ctx.supabaseAdmin;
+
+  const { data: memberData, error: memberError } = await admin
+    .from("group_users")
+    .select("id, user_id, users!inner(name, is_active, photos(url))")
+    .eq("group_id", groupId)
+    .eq("registration_status", "ACTIVE")
+    .eq("users.is_active", true);
+  if (memberError) return dbError(logLabel, "members", memberError);
+  const memberRows = (memberData ?? []) as unknown as MemberRow[];
+  if (memberRows.length === 0) return [];
+
+  const members = new Map<string, { row: MemberRow; linkIds: Set<string> }>();
+  for (const row of memberRows) {
+    const member = members.get(row.user_id);
+    if (member) member.linkIds.add(row.id);
+    else members.set(row.user_id, { row, linkIds: new Set([row.id]) });
+  }
+
+  const { data: suggestionData, error: suggestionError } = await admin
+    .from("book_suggestions")
+    .select("id, group_user_id, book_id, books(name, author, photos(url))")
+    .in("group_user_id", memberRows.map((row) => row.id))
+    .eq("book_status", "AVAILABLE")
+    .order("suggested_at", { ascending: false });
+  if (suggestionError) return dbError(logLabel, "suggestions", suggestionError);
+  const suggestions = (suggestionData ?? []) as unknown as SuggestionRow[];
+
+  const usedBooks = await findGroupUsedBooks(ctx, groupId, logLabel);
+  if (usedBooks instanceof Response) return usedBooks;
+
+  const resolvePhotoUrl = await resolveProfilePhotoUrls(
+    ctx,
+    req,
+    memberRows.map((row) => row.users.photos?.url),
+  );
+  if (resolvePhotoUrl instanceof Response) return resolvePhotoUrl;
+
+  return [...members.values()]
+    .map(({ row, linkIds }) => {
+      const own = suggestions.filter((s) => linkIds.has(s.group_user_id));
+      const available = own.find((s) => !usedBooks.has(s.book_id));
+      return {
+        userId: row.user_id,
+        name: row.users.name,
+        avatarUrl: resolvePhotoUrl(row.users.photos?.url),
+        book: available ? toRaffleBook(available) : null,
+        exclusionReason: available
           ? null
           : own.length > 0
           ? BOOK_ALREADY_DRAWN_REASON
@@ -268,7 +338,7 @@ async function findGroupLinks(
     .eq("group_id", groupId);
   if (error) return dbError(logLabel, "group members", error);
 
-  const rows = (data ?? []) as {
+  const rows = (data ?? []) as unknown as {
     id: string;
     user_id: string;
     registration_status: string;
@@ -368,13 +438,15 @@ export function toParticipantJson(candidate: RaffleCandidate) {
 }
 
 export function toResultJson(
-  meetingId: string,
+  meetingId: string | null,
   candidate: RaffleCandidate,
   drawnAt: string | null,
   nextMeetingId: string | null = null,
+  groupId: string | null = null,
 ) {
   return {
     meeting_id: meetingId,
+    group_id: groupId,
     next_meeting_id: nextMeetingId,
     winner_id: candidate.userId,
     winner_name: candidate.name,
@@ -399,6 +471,37 @@ export async function readJsonBody(
     // cai no 400 abaixo
   }
   return Response.json({ error: "expected JSON body" }, { status: 400 });
+}
+
+export type RaffleTarget =
+  | { type: "meeting"; meetingId: string; groupId?: string | null }
+  | { type: "inaugural"; groupId: string; meetingId: null };
+
+export function readRaffleTarget(
+  body: Record<string, unknown>,
+): RaffleTarget | Response {
+  const meetingId = body.meeting_id;
+  const groupId = body.group_id;
+
+  if (meetingId !== undefined && meetingId !== null && meetingId !== "") {
+    if (!isUuid(meetingId)) return badRequest('missing/invalid "meeting_id"');
+    return {
+      type: "meeting",
+      meetingId: (meetingId as string).toLowerCase(),
+      groupId: isUuid(groupId) ? (groupId as string).toLowerCase() : null,
+    };
+  }
+
+  if (groupId !== undefined && groupId !== null && groupId !== "") {
+    if (!isUuid(groupId)) return badRequest('missing/invalid "group_id"');
+    return {
+      type: "inaugural",
+      groupId: (groupId as string).toLowerCase(),
+      meetingId: null,
+    };
+  }
+
+  return badRequest('missing/invalid "meeting_id" or "group_id"');
 }
 
 export function readMeetingId(
@@ -441,16 +544,68 @@ export function pickEligible(
 
 export async function hasRaffleResult(
   ctx: Ctx,
-  meetingId: string,
+  target: string | { meetingId?: string | null; groupId?: string | null },
   logLabel: string,
 ): Promise<boolean | Response> {
-  const { count, error } = await ctx.supabaseAdmin
+  const meetingId = typeof target === "string" ? target : target.meetingId;
+  const groupId = typeof target === "string" ? null : target.groupId;
+
+  let query = ctx.supabaseAdmin
     .from("meeting_raffles")
-    .select("meeting_id", { count: "exact", head: true })
-    .eq("meeting_id", meetingId);
+    .select("id", { count: "exact", head: true });
+
+  if (meetingId) {
+    query = query.eq("meeting_id", meetingId);
+  } else if (groupId) {
+    query = query.eq("group_id", groupId).is("meeting_id", null);
+  } else {
+    return false;
+  }
+
+  const { count, error } = await query;
   if (error) return dbError(logLabel, "raffle lookup", error);
   return (count ?? 0) > 0;
 }
+
+export async function hasOpenMeeting(
+  ctx: Ctx,
+  groupId: string,
+  logLabel: string,
+): Promise<boolean | Response> {
+  const { count, error } = await ctx.supabaseAdmin
+    .from("meetings")
+    .select("id", { count: "exact", head: true })
+    .eq("group_id", groupId)
+    .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"]);
+  if (error) return dbError(logLabel, "open meeting lookup", error);
+  return (count ?? 0) > 0;
+}
+
+export async function hasAnyMeeting(
+  ctx: Ctx,
+  groupId: string,
+  logLabel: string,
+): Promise<boolean | Response> {
+  const { count, error } = await ctx.supabaseAdmin
+    .from("meetings")
+    .select("id", { count: "exact", head: true })
+    .eq("group_id", groupId);
+  if (error) return dbError(logLabel, "group meetings lookup", error);
+  return (count ?? 0) > 0;
+}
+
+export const meetingAlreadyOpen = () =>
+  Response.json({ error: "group already has an open meeting" }, {
+    status: 409,
+  });
+
+export const inauguralRaffleUnavailable = () =>
+  Response.json(
+    { error: "inaugural raffle requires a group with no meetings" },
+    {
+      status: 409,
+    },
+  );
 
 export const raffleAlreadyRecorded = () =>
   Response.json({ error: "raffle already recorded for this meeting" }, {

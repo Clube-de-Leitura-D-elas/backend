@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
+import { NOT_JOINED_FILTER } from "../_shared/group.ts";
 import { oneLine } from "../_shared/log.ts";
 import { countDoneTasks, TASKS_TOTAL } from "../_shared/meetingTasks.ts";
 
@@ -59,6 +60,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     )
     .eq("user_id", profile.id)
     .eq("groups.is_active", true)
+    .not("registration_status", "in", NOT_JOINED_FILTER)
     .order("group_id");
 
   if (error) {
@@ -85,7 +87,8 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
   const { data: groupUsers, error: groupUsersError } = await ctx.supabaseAdmin
     .from("group_users")
     .select("group_id")
-    .in("group_id", groupIds);
+    .in("group_id", groupIds)
+    .not("registration_status", "in", NOT_JOINED_FILTER);
 
   if (groupUsersError) {
     console.error(
@@ -103,7 +106,13 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
       "id, group_id, host_id, status, date, location_id, locations(name, address), books!inner(name), host:group_users!meetings_host_id_fkey!inner(users!inner(name)), meeting_users(user_id, invitation_status), meeting_photos(is_sketch)",
     )
     .in("group_id", groupIds)
-    .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS", "ENDED"])
+    .in("status", [
+      "CREATED",
+      "SCHEDULED",
+      "IN_PROGRESS",
+      "ENDED",
+      "CONCLUDED",
+    ])
     .order("date", { ascending: true })
     .order("id", { ascending: true });
 
@@ -117,10 +126,30 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     });
   }
 
+  const { data: rafflesData, error: rafflesError } = await ctx.supabaseAdmin
+    .from("meeting_raffles")
+    .select("group_id, meeting_id")
+    .in("group_id", groupIds);
+
+  if (rafflesError) {
+    console.error(
+      "get-my-groups raffles error",
+      oneLine(rafflesError.message),
+    );
+    return Response.json({ error: "Unable to load user groups" }, {
+      status: 500,
+    });
+  }
+
+  const meetingsByGroupId = new Map<string, MeetingRow[]>();
   const upcomingMeetingByGroupId = new Map<string, MeetingRow>();
   const pendingMeetingsByGroupId = new Map<string, MeetingRow[]>();
   const now = Date.now();
   for (const meeting of (meetingData ?? []) as unknown as MeetingRow[]) {
+    const list = meetingsByGroupId.get(meeting.group_id);
+    if (list) list.push(meeting);
+    else meetingsByGroupId.set(meeting.group_id, [meeting]);
+
     const membership = membershipByGroupId.get(meeting.group_id);
     if (
       !upcomingMeetingByGroupId.has(meeting.group_id) &&
@@ -139,6 +168,23 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
     }
   }
 
+  const rafflesByGroupId = new Map<
+    string,
+    { hasInaugural: boolean; meetingIds: Set<string> }
+  >();
+  for (const raffle of rafflesData ?? []) {
+    let entry = rafflesByGroupId.get(raffle.group_id);
+    if (!entry) {
+      entry = { hasInaugural: false, meetingIds: new Set() };
+      rafflesByGroupId.set(raffle.group_id, entry);
+    }
+    if (!raffle.meeting_id) {
+      entry.hasInaugural = true;
+    } else {
+      entry.meetingIds.add(raffle.meeting_id);
+    }
+  }
+
   const countsByGroupId = new Map<string, number>();
   for (const groupUser of groupUsers ?? []) {
     countsByGroupId.set(
@@ -153,12 +199,51 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
       const membership = membershipByGroupId.get(group.id);
       const pendingMeetings = pendingMeetingsByGroupId.get(group.id) ?? [];
       const upcomingMeeting = upcomingMeetingByGroupId.get(group.id);
+      const groupMeetings = meetingsByGroupId.get(group.id) ?? [];
+      const openMeeting = groupMeetings.find((m) =>
+        ["CREATED", "SCHEDULED", "IN_PROGRESS"].includes(m.status)
+      );
+      const raffles = rafflesByGroupId.get(group.id) ?? {
+        hasInaugural: false,
+        meetingIds: new Set(),
+      };
+
+      let pendingRaffle: {
+        type: "INAUGURAL" | "PENDING";
+        meeting_id?: string;
+        group_id: string;
+      } | null = null;
+
+      if (!openMeeting && membership?.is_coordinator) {
+        if (groupMeetings.length === 0) {
+          if (!raffles.hasInaugural) {
+            pendingRaffle = { type: "INAUGURAL", group_id: group.id };
+          }
+        } else {
+          const lastMeeting = groupMeetings[groupMeetings.length - 1];
+          if (
+            (lastMeeting.status === "ENDED" ||
+              lastMeeting.status === "CONCLUDED") &&
+            !raffles.meetingIds.has(lastMeeting.id)
+          ) {
+            pendingRaffle = {
+              type: "PENDING",
+              meeting_id: lastMeeting.id,
+              group_id: group.id,
+            };
+          }
+        }
+      }
+
       return {
         id: group.id,
         number: group.number,
         participant_count: countsByGroupId.get(group.id) ?? 0,
         city_state: city ? `${city.name}, ${city.uf}` : "",
         photo_url: group.photos?.url ?? null,
+        has_open_meeting: Boolean(openMeeting),
+        open_meeting_status: openMeeting ? openMeeting.status : null,
+        pending_raffle: pendingRaffle,
         next_meeting: upcomingMeeting
           ? toMeetingSummary(upcomingMeeting, membership, profile.id)
           : null,
@@ -208,12 +293,7 @@ function canManageTasks(
 
 function isUpcoming(meeting: MeetingRow, now: number): boolean {
   if (meeting.status === "IN_PROGRESS") return true;
-  if (
-    meeting.status === "ENDED" ||
-    meeting.status === "CREATED" ||
-    !meeting.date
-  ) {
-    return false;
-  }
+  // Rascunhos CREATED sem data ficam de fora; com data, já são o próximo evento.
+  if (meeting.status === "ENDED" || !meeting.date) return false;
   return Date.parse(meeting.date) >= now;
 }

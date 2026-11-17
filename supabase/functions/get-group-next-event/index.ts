@@ -60,7 +60,30 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   if (!data) {
-    return Response.json({ next_event: null });
+    const { data: draftMeeting, error: draftMeetingError } = await ctx
+      .supabaseAdmin
+      .from("meetings")
+      .select("id")
+      .eq("group_id", groupId)
+      .in("status", ["CREATED", "SCHEDULED", "IN_PROGRESS"])
+      .limit(1)
+      .maybeSingle();
+
+    if (draftMeetingError) {
+      console.error(
+        "get-group-next-event draft meeting error",
+        draftMeetingError.message.replace(/[\r\n]/g, " "),
+      );
+      return Response.json({ error: "Unable to load next event" }, {
+        status: 500,
+      });
+    }
+
+    return Response.json({
+      next_event: null,
+      is_in_preparation: Boolean(draftMeeting),
+      draft_meeting_id: draftMeeting?.id ?? null,
+    });
   }
 
   const meeting = data as unknown as MeetingRow;
@@ -76,5 +99,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       book_title: meeting.books?.name ?? null,
       book_cover_url: meeting.books?.photos?.url ?? null,
     },
+    is_in_preparation: false,
+    draft_meeting_id: null,
   });
 }));
