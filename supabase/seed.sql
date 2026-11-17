@@ -149,10 +149,16 @@ INSERT INTO s_users VALUES
   (30, 'elisa.montenegro',    'Elisa Montenegro',    '(81) 98764-4092', NULL,                 '1987-03-31', 'Médica',                      'POSTGRADUATE',             'READER',  'rec', NULL),
   (31, 'veronica.lins',       'Verônica Lins',       '(81) 99521-8846', 'vero.lins',          '1979-10-10', 'Professora',                  'DOCTORATE',                'READER',  'rec', NULL),
   (32, 'ingrid.bezerra',      'Ingrid Bezerra',      '(81) 98207-3375', 'ingrid.bezerra',     '1996-07-24', 'Designer',                    'TECHNICAL',                'READER',  'rec', NULL),
-  (33, 'mariana.souza',       'Mariana Souza',       '(51) 99111-2233', NULL,                 '1993-05-14', 'Professora',                  'UNDERGRADUATE',            'READER',  'poa', 'poa-sul');
+  (33, 'mariana.souza',       'Mariana Souza',       '(51) 99111-2233', NULL,                 '1993-05-14', 'Professora',                  'UNDERGRADUATE',            'READER',  'poa', 'poa-sul'),
+  -- Casos da lista de faltas do dashboard (CLU-254), ver s_absences
+  (34, 'rayane.moura',        'Rayane Moura',        '(81) 99000-3401', NULL,                 '1997-02-11', 'Enfermeira',                  'UNDERGRADUATE',            'READER',  'rec', NULL),
+  (35, 'joana.dias',          'Joana Dias',          '(51) 99000-3502', 'joana.dias',         '1990-09-03', 'Advogada',                    'POSTGRADUATE',             'READER',  'poa', 'poa-sul'),
+  (36, 'luiza.hashimoto',     'Luiza Hashimoto',     '(11) 99000-3603', NULL,                 '1994-12-19', 'Arquiteta',                   'UNDERGRADUATE',            'READER',  'sp',  'sp-sul'),
+  (37, 'thais.albuquerque',   'Thaís Albuquerque',   '(11) 99000-3704', NULL,                 '1999-06-25', 'Estudante',                   'INCOMPLETE_UNDERGRADUATE', 'READER',  'sp',  'sp-oeste'),
+  (38, 'cecilia.tavares',     'Cecília Tavares',     '(81) 99000-3805', 'cecilia.tavares',    '1986-04-08', 'Bibliotecária',               'MASTERS',                  'READER',  'rec', NULL);
 -- Vínculos grupo x participante ---------------------------
 -- (grp, usr, coordenadora?, ausências consecutivas mais recentes)
--- Quem está em mais de um grupo: 1 (g1,g2), 5 (g1,g2,g7), 9 (g1,g2), 21 (g3,g4)
+-- Quem está em mais de um grupo: 1 (g1,g2), 5 (g1,g2,g7), 9 (g1,g2), 21 (g3,g4), 35 (g1,g2)
 DROP TABLE IF EXISTS s_members;
 CREATE TEMP TABLE s_members (grp int, usr int, coord boolean, last_abs smallint, PRIMARY KEY (grp, usr));
 INSERT INTO s_members VALUES
@@ -164,7 +170,10 @@ INSERT INTO s_members VALUES
   (4, 18, true,  0), (4, 19, false, 1), (4, 21, false, 0),
   (5, 23, true,  0), (5, 24, false, 0), (5, 25, false, 0), (5, 26, false, 0), (5, 27, false, 0), (5, 28, false, 3),
   (6, 29, true,  0), (6, 30, false, 0), (6, 31, false, 1), (6, 32, false, 0),
-  (7,  8, true,  0), (7,  5, false, 0), (7, 10, false, 1);
+  (7,  8, true,  0), (7,  5, false, 0), (7, 10, false, 1),
+  -- Casos da lista de faltas do dashboard (CLU-254)
+  (6, 34, false, 3), (1, 35, false, 3), (2, 35, false, 3), (4, 36, false, 2),
+  (3, 37, false, 4), (6, 38, false, 2);
 
 -- Livros --------------------------------------------------
 DROP TABLE IF EXISTS s_books;
@@ -245,6 +254,9 @@ INSERT INTO s_meetings VALUES
   ('g6-m1', 6,  8, 30,  9, -100, 19, 'CONCLUDED'),
   ('g6-m2', 6, 12, 29, 10,  -60, 19, 'CONCLUDED'),
   ('g6-m3', 6, 14, 31,  9,  -25, 19, 'CONCLUDED'),
+  -- Encerrado sem lista de presença (set-meeting-presence não chamado): a lista
+  -- de faltas do dashboard ignora este encontro (CLU-254, decisão 3)
+  ('g6-m3b', 6, 5, 29,  9,  -10, 19, 'ENDED'),
   ('g6-m4', 6,  3, 32, NULL, 16, 19, 'CREATED'),
   -- Grupo 7 (Porto Alegre / Zona Norte, INATIVO): só histórico
   ('g7-m1', 7, 22,  8,  3, -200, 19, 'CONCLUDED'),
@@ -260,7 +272,21 @@ INSERT INTO s_absences VALUES
   ('g4-m2', 19),
   ('g5-m1', 25), ('g5-m2', 28), ('g5-m3', 28), ('g5-m4', 28),
   ('g6-m3', 31),
-  ('g7-m2', 10);
+  ('g7-m2', 10),
+  -- Lista de faltas do dashboard (CLU-254):
+  --   34 (g6) nunca presente -> entra, última presença nula
+  ('g6-m1', 34), ('g6-m2', 34), ('g6-m3', 34),
+  --   35 faltou aos 3 últimos em g1 (presente em g1-m1) e em g2 (nunca
+  --   presente) -> duas linhas, uma por grupo
+  ('g1-m2', 35), ('g1-m3', 35), ('g1-m4', 35),
+  ('g2-m1', 35), ('g2-m2', 35), ('g2-m3', 35),
+  --   36 faltou a tudo em g4, que só tem 2 encontros -> não entra
+  ('g4-m1', 36), ('g4-m2', 36),
+  --   37 entrou em g3 há pouco (ver o UPDATE depois dos vínculos) -> não entra
+  ('g3-m1', 37), ('g3-m2', 37), ('g3-m3', 37), ('g3-m4', 37),
+  --   38 presente só em g6-m1; o encerrado sem lista (g6-m3b) é ignorado, então
+  --   os 3 últimos são m1, m2 e m3 -> não entra
+  ('g6-m2', 38), ('g6-m3', 38);
 
 -- Indicações ativas para o próximo sorteio (nenhum livro aqui foi sorteado no mesmo grupo)
 DROP TABLE IF EXISTS s_sugs;
@@ -381,7 +407,9 @@ INSERT INTO public.users (
 )
 SELECT pg_temp.sid('user', u.key::text),
        u.name,
-       now() - (200 + u.key * 5) * interval '1 day',
+       -- Entradas espalhadas por ~4 anos (CLU-251): `key % 4` soma de 0 a 3 anos,
+       -- para o gráfico "Total de Participantes" crescer nas visões de 2 e 5 anos.
+       now() - (200 + u.key * 5 + (u.key % 4) * 365) * interval '1 day',
        u.phone, u.instagram,
        pg_temp.email(u.slug),
        u.birth, u.job,
@@ -445,6 +473,12 @@ SELECT pg_temp.sid('gu', m.grp::text || ':' || m.usr::text),
        now() - ((90 + ((m.grp * 37 + m.usr * 13) % 640)) || ' days')::interval
 FROM s_members m
 ON CONFLICT (id) DO NOTHING;
+
+-- Integrante recente (CLU-254, decisão 2): entrou em g3 depois do mais antigo
+-- dos 3 últimos encontros, então não entra na lista de faltas do dashboard.
+UPDATE public.group_users
+SET created_at = now() - interval '15 days'
+WHERE id = pg_temp.sid('gu', '3:37');
 
 -- ---------------------------------------------------------
 -- 7. ENCONTROS (UPSERT: re-ancora as datas relativas a hoje)
