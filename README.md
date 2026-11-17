@@ -54,6 +54,25 @@ Após o `supabase start`, o terminal exibe a URL e as chaves locais. Use esses v
 
 As credenciais também estão no **GitHub Secrets** do repositório.
 
+O painel web usa os mesmos valores no `.env.local` dele, como `VITE_SUPABASE_URL` e
+`VITE_SUPABASE_PUBLISHABLE_KEY`. O passo a passo está em
+[Rodando com o Supabase local](https://github.com/Clube-de-Leitura-D-elas/web#rodando-com-o-supabase-local),
+no README do `web`.
+
+### Contas do seed
+
+O `db reset` também aplica o `supabase/seed.sql`, que cria estas contas de teste. Todas usam a
+senha `ClubeDelas@123` e só existem no banco local: no projeto remoto, o login com elas falha.
+
+| E-mail | Papel | Painel web |
+|---|---|---|
+| `local.user.admin@gmail.com` | `FOUNDER` | Entra, com acesso a tudo |
+| `local.user.manager@gmail.com` | `MANAGER` | Entra, mas as functions só de `FOUNDER` (ex.: `get-participants`, `create-group`) respondem 403 |
+| `local.user.reader@gmail.com` | `READER` | Não entra; serve para testar o app e os casos de 403 |
+
+As outras participantes do seed usam `<nome.sobrenome>@example.com` (ex.:
+`fernanda.vargas@example.com`) e a mesma senha. Quase todas são `READER`.
+
 ---
 
 ## ⚡ Executando as Edge Functions localmente
