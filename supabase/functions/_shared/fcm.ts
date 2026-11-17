@@ -105,11 +105,14 @@ async function readError(response: Response): Promise<FcmError> {
 // uma leitora; então só apaga quando o detalhe é o erro específico do FCM sobre
 // o token (@type FcmError, mensagem "registration token"). Na dúvida, é falha.
 function classifyError(httpStatus: number, error: FcmError): SendResult {
-  const fcmError = (error.details ?? []).find((detail) =>
-    (detail as { "@type"?: string })?.["@type"]?.endsWith(
-      "google.firebase.fcm.v1.FcmError",
-    )
-  ) as { errorCode?: string } | undefined;
+  // O corpo vem de fora: `details` e `@type` podem não ter o formato esperado,
+  // e aqui nada pode lançar (o envio já reivindicou o push_sent_at).
+  const details = Array.isArray(error.details) ? error.details : [];
+  const fcmError = details.find((detail) => {
+    const type = (detail as { "@type"?: unknown } | null)?.["@type"];
+    return typeof type === "string" &&
+      type.endsWith("google.firebase.fcm.v1.FcmError");
+  }) as { errorCode?: string } | undefined;
   const code = fcmError?.errorCode ?? error.status ?? "UNKNOWN";
   const reason = `fcm ${httpStatus} ${code}`;
 
