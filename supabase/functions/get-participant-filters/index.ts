@@ -7,15 +7,15 @@ import { requireFounder } from "../_shared/founder.ts";
 // Dados de apoio da tela de participantes: opções dos filtros de cidade e grupo
 // e o resumo "X grupos ativos em Y cidades" do cabeçalho.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (_req, ctx) => {
-  const denied = await requireFounder(ctx);
-  if (denied) return denied;
-
   if (_req.method !== "GET") {
     return Response.json(
       { error: "expected GET request" },
       { status: 405 },
     );
   }
+  
+  const denied = await requireFounder(ctx);
+  if (denied) return denied;
 
   const [citiesResult, groupsResult, participantsResult] = await Promise.all([
     ctx.supabaseAdmin.from("cities").select("id, name").order("name"),
