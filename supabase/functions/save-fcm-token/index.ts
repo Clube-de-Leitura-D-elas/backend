@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { Database } from "../_shared/database.ts";
+import { oneLine } from "../_shared/log.ts";
 
 // Salva ou atualiza o token FCM da usuária autenticada para envio de push notifications.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
@@ -30,17 +31,39 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const tokenValue = typeof fcmToken === "string" ? fcmToken.trim() : null;
 
-  const { error } = await ctx.supabaseAdmin
+  if (tokenValue !== null) {
+    const { error: clearError } = await ctx.supabaseAdmin
+      .from("users")
+      .update({
+        fcm_token: null,
+        fcm_token_updated_at: null,
+      })
+      .eq("fcm_token", tokenValue)
+      .neq("user_id", authUserId);
+
+    if (clearError) {
+      console.error("save-fcm-token clear duplicate", oneLine(clearError.message));
+      return Response.json({ error: "Failed to save FCM token" }, { status: 500 });
+    }
+  }
+
+  const { data, error } = await ctx.supabaseAdmin
     .from("users")
     .update({
       fcm_token: tokenValue,
       fcm_token_updated_at: new Date().toISOString(),
     })
-    .eq("user_id", authUserId);
+    .eq("user_id", authUserId)
+    .select("id")
+    .maybeSingle();
 
   if (error) {
-    console.error("save-fcm-token error", error);
-    return Response.json({ error: error.message }, { status: 500 });
+    console.error("save-fcm-token update", oneLine(error.message));
+    return Response.json({ error: "Failed to save FCM token" }, { status: 500 });
+  }
+
+  if (!data) {
+    return Response.json({ error: "User profile not found" }, { status: 404 });
   }
 
   return Response.json({ success: true });

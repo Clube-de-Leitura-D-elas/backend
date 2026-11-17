@@ -767,3 +767,18 @@ import_map = "./functions/unregister-device/deno.json"
 enabled = true
 verify_jwt = false
 import_map = "./functions/send-push/deno.json"
+
+[functions.save-fcm-token]
+enabled = true
+verify_jwt = true
+import_map = "./functions/save-fcm-token/deno.json"
+
+[functions.send-push-notifications]
+enabled = true
+verify_jwt = true
+import_map = "./functions/send-push-notifications/deno.json"
+
+[functions.notify-upcoming-meetings]
+enabled = true
+verify_jwt = false
+import_map = "./functions/notify-upcoming-meetings/deno.json"

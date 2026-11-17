@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { SignJWT, importPKCS8 } from "npm:jose@5.9.6";
+import { todayInSaoPaulo } from "../_shared/date.ts";
+import { oneLine } from "../_shared/log.ts";
 
 // Obtém token de acesso OAuth2 usando a chave privada da Service Account do Firebase
 async function getFirebaseAccessToken(clientEmail: string, privateKeyPem: string): Promise<string> {
@@ -41,6 +43,16 @@ async function getFirebaseAccessToken(clientEmail: string, privateKeyPem: string
 }
 
 Deno.serve(async (req) => {
+  if (req.method !== "POST") {
+    return Response.json({ error: "Expected POST request" }, { status: 405 });
+  }
+
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  const authHeader = req.headers.get("Authorization");
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const projectId = Deno.env.get("FIREBASE_PROJECT_ID");
@@ -55,20 +67,17 @@ Deno.serve(async (req) => {
     return Response.json({ error: "Firebase secrets missing in environment" }, { status: 500 });
   }
 
-  // Validação opcional de segurança do endpoint
-  const authHeader = req.headers.get("Authorization");
-  if (authHeader && authHeader !== `Bearer ${supabaseServiceKey}`) {
-    // Se o header for passado e não bater com a service role key, recusamos
-    console.warn("Authorization header provided did not match service role key");
-  }
-
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-  // Janela: de agora até daqui a 7 dias
-  const now = new Date();
-  const inSevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  // Janela: encontros entre 6 e 7 dias a partir de hoje em America/Sao_Paulo
+  const todayStr = todayInSaoPaulo();
+  const [y, m, d] = todayStr.split("-").map(Number);
+  const startDay = new Date(Date.UTC(y, m - 1, d + 6)).toISOString().slice(0, 10);
+  const endDay = new Date(Date.UTC(y, m - 1, d + 7)).toISOString().slice(0, 10);
+  const windowStart = `${startDay}T00:00:00-03:00`;
+  const windowEnd = `${endDay}T23:59:59.999-03:00`;
 
-  // Busca os encontros que acontecem na janela de 7 dias e ainda não foram avisados
+  // Busca os encontros que acontecem na janela de 6 a 7 dias e ainda não foram avisados
   const { data: meetings, error: meetingsError } = await supabase
     .from("meetings")
     .select(`
@@ -88,12 +97,12 @@ Deno.serve(async (req) => {
     `)
     .eq("reminder_1_week_sent", false)
     .in("status", ["CREATED", "SCHEDULED"])
-    .gte("date", now.toISOString())
-    .lte("date", inSevenDays.toISOString());
+    .gte("date", windowStart)
+    .lte("date", windowEnd);
 
   if (meetingsError) {
-    console.error("Error fetching upcoming meetings:", meetingsError);
-    return Response.json({ error: meetingsError.message }, { status: 500 });
+    console.error("notify-upcoming-meetings fetch meetings", oneLine(meetingsError.message));
+    return Response.json({ error: "Failed to fetch upcoming meetings" }, { status: 500 });
   }
 
   if (!meetings || meetings.length === 0) {
@@ -157,18 +166,48 @@ Deno.serve(async (req) => {
 
     // 2. Grava a notificação no histórico (public.notifications)
     const { data: createdNotif, error: notifInsertError } = await supabase
+    // Reivindicação atômica para evitar disparos duplicados em execuções concorrentes
+    const { data: claimedMeeting, error: claimError } = await supabase
+      .from("meetings")
+      .update({ reminder_1_week_sent: true })
+      .eq("id", meeting.id)
+      .eq("reminder_1_week_sent", false)
+      .select("id")
+      .maybeSingle();
+
+    if (claimError) {
+      console.error(
+        `notify-upcoming-meetings claim meeting ${meeting.id}`,
+        oneLine(claimError.message),
+      );
+      continue;
+    }
+
+    if (!claimedMeeting) {
+      continue;
+    }
+
+    const { data: createdNotif, error: notifInsertError } = await supabase
       .from("notifications")
       .insert({
         title: notifTitle,
         message: notifMessage,
         type: "MEETING_REMINDER",
-        scheduled_for: now.toISOString(),
+        scheduled_for: new Date().toISOString(),
       })
       .select("id")
       .single();
 
-    if (notifInsertError) {
-      console.error(`Error creating notification row for meeting ${meeting.id}:`, notifInsertError);
+    if (notifInsertError || !createdNotif) {
+      console.error(
+        `notify-upcoming-meetings insert notification ${meeting.id}`,
+        oneLine(notifInsertError?.message ?? "missing created notification"),
+      );
+      await supabase
+        .from("meetings")
+        .update({ reminder_1_week_sent: false })
+        .eq("id", meeting.id);
+      continue;
     }
 
     const notifId = createdNotif?.id;
@@ -238,7 +277,6 @@ Deno.serve(async (req) => {
             const errorCode = errData?.error?.details?.[0]?.errorCode || errData?.error?.status;
             if (
               errorCode === "UNREGISTERED" ||
-              errorCode === "INVALID_ARGUMENT" ||
               errData?.error?.message?.includes("not a valid FCM registration token")
             ) {
               invalidCount++;

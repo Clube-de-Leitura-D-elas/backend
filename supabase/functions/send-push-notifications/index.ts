@@ -1,6 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { withSupabase } from "jsr:@supabase/server@^1";
 import { SignJWT, importPKCS8 } from "npm:jose@5.9.6";
+import type { Database } from "../_shared/database.ts";
+import { oneLine } from "../_shared/log.ts";
+import { requireRole } from "../_shared/role.ts";
+import { isUuid } from "../_shared/uuid.ts";
 
 // Obtém token de acesso OAuth2 para o FCM HTTP v1 usando a Service Account
 async function getFirebaseAccessToken(clientEmail: string, privateKeyPem: string): Promise<string> {
@@ -47,23 +51,9 @@ interface SendPushRequest {
   data?: Record<string, string>;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "POST") {
     return Response.json({ error: "Expected POST request" }, { status: 405 });
-  }
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const projectId = Deno.env.get("FIREBASE_PROJECT_ID");
-  const clientEmail = Deno.env.get("FIREBASE_CLIENT_EMAIL");
-  const privateKey = Deno.env.get("FIREBASE_PRIVATE_KEY");
-
-  if (!supabaseUrl || !supabaseServiceKey) {
-    return Response.json({ error: "Supabase environment variables missing" }, { status: 500 });
-  }
-
-  if (!projectId || !clientEmail || !privateKey) {
-    return Response.json({ error: "Firebase secrets missing in environment" }, { status: 500 });
   }
 
   let payload: SendPushRequest;
@@ -82,6 +72,17 @@ Deno.serve(async (req) => {
     );
   }
 
+  const cleanUserIds: string[] = [];
+  for (const rawId of user_ids) {
+    if (typeof rawId !== "string" || !isUuid(rawId.trim())) {
+      return Response.json(
+        { error: 'Invalid "user_ids": all items must be valid UUID strings' },
+        { status: 400 },
+      );
+    }
+    cleanUserIds.push(rawId.trim());
+  }
+
   if (typeof title !== "string" || title.trim().length === 0) {
     return Response.json(
       { error: 'Missing or invalid "title": must be a non-empty string' },
@@ -96,31 +97,31 @@ Deno.serve(async (req) => {
     );
   }
 
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const authError = await requireRole(ctx, ["MANAGER", "FOUNDER"], "manager or founder");
+  if (authError) {
+    return authError;
+  }
+
+  const projectId = Deno.env.get("FIREBASE_PROJECT_ID");
+  const clientEmail = Deno.env.get("FIREBASE_CLIENT_EMAIL");
+  const privateKey = Deno.env.get("FIREBASE_PRIVATE_KEY");
+
+  if (!projectId || !clientEmail || !privateKey) {
+    return Response.json({ error: "Firebase secrets missing in environment" }, { status: 500 });
+  }
+
+  const supabase = ctx.supabaseAdmin;
 
   // Busca os usuários no banco onde o id ou o user_id (auth) esteja na lista
   // e que possuam um fcm_token cadastrado
-  const cleanUserIds = user_ids.map((id) => String(id).trim());
-
-  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const invalidUuids = cleanUserIds.filter((id) => !UUID_REGEX.test(id));
-  if (invalidUuids.length > 0) {
-    return Response.json(
-      {
-        error: `Invalid UUID format detected: ${invalidUuids.map((id) => `"${id}"`).join(", ")}. UUIDs must contain only 0-9 and a-f characters.`,
-      },
-      { status: 400 },
-    );
-  }
-
   const { data: users, error: usersError } = await supabase
     .from("users")
     .select("id, user_id, name, fcm_token")
     .or(`id.in.(${cleanUserIds.join(",")}),user_id.in.(${cleanUserIds.join(",")})`);
 
   if (usersError) {
-    console.error("Error querying users for push notifications:", usersError);
-    return Response.json({ error: usersError.message }, { status: 500 });
+    console.error("send-push-notifications query users", oneLine(usersError.message));
+    return Response.json({ error: "Failed to query users" }, { status: 500 });
   }
 
   const usersWithToken = (users || []).filter((u) => u.fcm_token && u.fcm_token.trim().length > 0);
@@ -140,13 +141,14 @@ Deno.serve(async (req) => {
   try {
     accessToken = await getFirebaseAccessToken(clientEmail, privateKey);
   } catch (err) {
-    console.error("Failed to authenticate with Firebase:", err);
-    return Response.json({ error: String(err) }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("send-push-notifications firebase auth", oneLine(msg));
+    return Response.json({ error: "Failed to authenticate with Firebase" }, { status: 500 });
   }
 
   // 1. Grava no histórico de notificações do app
   const now = new Date();
-  const { data: createdNotif } = await supabase
+  const { data: createdNotif, error: notifError } = await supabase
     .from("notifications")
     .insert({
       title: title.trim(),
@@ -157,7 +159,15 @@ Deno.serve(async (req) => {
     .select("id")
     .single();
 
-  const notifId = createdNotif?.id;
+  if (notifError || !createdNotif) {
+    console.error(
+      "send-push-notifications insert notification",
+      oneLine(notifError?.message ?? "missing created notification"),
+    );
+    return Response.json({ error: "Failed to create notification" }, { status: 500 });
+  }
+
+  const notifId = createdNotif.id;
 
   let sentCount = 0;
   let invalidCount = 0;
@@ -179,10 +189,16 @@ Deno.serve(async (req) => {
   for (const user of usersWithToken) {
     // Registra alvo in-app
     if (notifId) {
-      await supabase.from("notifications_targets").insert({
+      const { error: targetError } = await supabase.from("notifications_targets").insert({
         notification_id: notifId,
         user_id: user.id,
       });
+      if (targetError) {
+        console.error(
+          "send-push-notifications insert target",
+          oneLine(targetError.message),
+        );
+      }
     }
 
     try {
@@ -238,7 +254,6 @@ Deno.serve(async (req) => {
 
         if (
           errorCode === "UNREGISTERED" ||
-          errorCode === "INVALID_ARGUMENT" ||
           errJson?.error?.message?.includes("not a valid FCM registration token")
         ) {
           invalidCount++;
@@ -279,4 +294,4 @@ Deno.serve(async (req) => {
     tokens_invalid: invalidCount,
     details: dispatchDetails,
   });
-});
+}));
