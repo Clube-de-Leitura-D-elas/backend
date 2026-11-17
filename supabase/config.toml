@@ -748,3 +748,22 @@ import_map = "./functions/update-user-profile/deno.json"
 enabled = true
 verify_jwt = true
 import_map = "./functions/get-cities-and-zones/deno.json"
+
+[functions.register-device]
+enabled = true
+verify_jwt = true
+import_map = "./functions/register-device/deno.json"
+
+[functions.unregister-device]
+enabled = true
+verify_jwt = true
+import_map = "./functions/unregister-device/deno.json"
+
+# verify_jwt = false de propósito: o banco chama esta function por pg_net só com
+# a chave secreta (sb_secret_...) no header apikey, que não é JWT, e o gateway
+# responderia 401. Quem protege é o withSupabase({ auth: "secret" }) no
+# index.ts: leitora, chave anon e chamada sem credencial recebem 401.
+[functions.send-push]
+enabled = true
+verify_jwt = false
+import_map = "./functions/send-push/deno.json"
