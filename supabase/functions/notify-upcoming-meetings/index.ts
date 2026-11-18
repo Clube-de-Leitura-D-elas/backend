@@ -164,8 +164,6 @@ Deno.serve(async (req) => {
       ? `O encontro do ${groupName} sobre o livro ${bookTitle} acontece em 1 semana!`
       : `O encontro do ${groupName} acontece em 1 semana!`;
 
-    // 2. Grava a notificação no histórico (public.notifications)
-    const { data: createdNotif, error: notifInsertError } = await supabase
     // Reivindicação atômica para evitar disparos duplicados em execuções concorrentes
     const { data: claimedMeeting, error: claimError } = await supabase
       .from("meetings")
@@ -187,6 +185,7 @@ Deno.serve(async (req) => {
       continue;
     }
 
+    // 2. Grava a notificação no histórico (public.notifications)
     const { data: createdNotif, error: notifInsertError } = await supabase
       .from("notifications")
       .insert({
