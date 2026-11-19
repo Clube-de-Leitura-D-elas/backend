@@ -5,7 +5,10 @@ import { oneLine } from "../_shared/log.ts";
 import { requireRole } from "../_shared/role.ts";
 
 const MIN_PASSWORD_LENGTH = 8;
-const MAX_PASSWORD_LENGTH = 72;
+// O bcrypt só considera os primeiros 72 bytes (não caracteres): acento e emoji ocupam mais de um.
+const MAX_PASSWORD_BYTES = 72;
+
+const byteLength = (value: string) => new TextEncoder().encode(value).length;
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "POST") {
@@ -28,14 +31,17 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     new_password: newPassword,
   } = body as Record<string, unknown>;
 
-  if (typeof currentPassword !== "string" || !currentPassword) {
+  if (
+    typeof currentPassword !== "string" || !currentPassword ||
+    byteLength(currentPassword) > MAX_PASSWORD_BYTES
+  ) {
     return Response.json({ error: 'missing/invalid "current_password"' }, {
       status: 400,
     });
   }
   if (
     typeof newPassword !== "string" ||
-    newPassword.length > MAX_PASSWORD_LENGTH
+    byteLength(newPassword) > MAX_PASSWORD_BYTES
   ) {
     return Response.json({ error: 'missing/invalid "new_password"' }, {
       status: 400,
@@ -70,6 +76,12 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       status: 500,
     });
   }
+  if (check === "no_password") {
+    return Response.json(
+      { error: "account has no password set", code: "no_password" },
+      { status: 409 },
+    );
+  }
   if (check === "locked") {
     return Response.json(
       { error: "too many attempts", code: "too_many_attempts" },
@@ -86,7 +98,16 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { error: updateError } = await ctx.supabaseAdmin.auth.admin
     .updateUserById(authUserId, { password: newPassword });
 
-  if (updateError?.code === "weak_password") {
+  if (updateError?.code === "same_password") {
+    return Response.json(
+      { error: "new password equals the current one", code: "same_password" },
+      { status: 422 },
+    );
+  }
+  if (
+    updateError?.code === "weak_password" ||
+    updateError?.code === "validation_failed"
+  ) {
     return Response.json(
       { error: "new password is too weak", code: "weak_password" },
       { status: 422 },
