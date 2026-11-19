@@ -6,9 +6,18 @@ import { isUuid } from "../_shared/uuid.ts";
 
 const LOG_LABEL = "recommend-book";
 const ALREADY_RECOMMENDED = "already_recommended";
+const NOT_GROUP_MEMBER_CODE = "P0043";
+const HOST_NOT_ELIGIBLE_CODE = "P0052";
+const BOOK_NOT_FOUND_CODE = "P0002";
 const UNIQUE_VIOLATION = "23505";
-const RECOMMENDATION_CONSTRAINT =
-  "book_suggestions_group_id_book_id_key";
+
+type RecommendationRow = {
+  id: string;
+  book_id: string;
+  group_id: string;
+  suggested_at: string;
+  action: "created" | "replaced";
+};
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "POST") {
@@ -46,59 +55,49 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "User profile not found" }, { status: 404 });
   }
 
-  const { data: membership, error: membershipError } = await ctx.supabaseAdmin
-    .from("group_users")
-    .select("id, groups!inner(id)")
-    .eq("group_id", groupId)
-    .eq("user_id", profile.id)
-    .eq("registration_status", "ACTIVE")
-    .eq("groups.is_active", true)
-    .limit(1)
-    .maybeSingle();
-  if (membershipError) return dbError("membership", membershipError);
-  if (!membership) {
-    return Response.json({ error: "not_group_member" }, { status: 403 });
-  }
-
-  const { data: book, error: bookError } = await ctx.supabaseAdmin
-    .from("books")
-    .select("id")
-    .eq("id", bookId)
-    .maybeSingle();
-  if (bookError) return dbError("book", bookError);
-  if (!book) {
-    return Response.json({ error: "book_not_found" }, { status: 404 });
-  }
-
   const { data, error } = await ctx.supabaseAdmin
-    .from("book_suggestions")
-    .insert({
-      book_id: book.id,
-      group_id: groupId,
-      group_user_id: membership.id,
-      suggested_at: new Date().toISOString(),
-      book_status: "AVAILABLE",
+    .rpc("recommend_book", {
+      p_group_id: groupId,
+      p_user_id: profile.id,
+      p_book_id: bookId,
     })
-    .select("id, book_id, group_id, suggested_at")
     .single();
   if (error) {
-    const constraint = `${error.message} ${error.details ?? ""}`;
-    if (
-      error.code === UNIQUE_VIOLATION &&
-      constraint.includes(RECOMMENDATION_CONSTRAINT)
-    ) {
+    if (error.code === NOT_GROUP_MEMBER_CODE) {
+      return Response.json({ error: "not_group_member" }, { status: 403 });
+    }
+    if (error.code === HOST_NOT_ELIGIBLE_CODE) {
+      return Response.json({ error: "host_not_eligible" }, { status: 403 });
+    }
+    if (error.code === BOOK_NOT_FOUND_CODE) {
+      return Response.json({ error: "book_not_found" }, { status: 404 });
+    }
+    if (error.code === UNIQUE_VIOLATION) {
       return Response.json({ error: ALREADY_RECOMMENDED }, { status: 409 });
     }
     return dbError("recommendation", error);
   }
 
-  const recommendation = data as {
-    id: string;
-    book_id: string;
-    group_id: string;
-    suggested_at: string;
-  };
-  return Response.json(recommendation, { status: 201 });
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | RecommendationRow
+    | null;
+  if (!row) {
+    return dbError("recommendation", {
+      message: "empty recommend_book result",
+    });
+  }
+
+  const replaced = row.action === "replaced";
+  return Response.json(
+    {
+      id: row.id,
+      book_id: row.book_id,
+      group_id: row.group_id,
+      suggested_at: row.suggested_at,
+      replaced,
+    },
+    { status: replaced ? 200 : 201 },
+  );
 }));
 
 function dbError(label: string, error: { message: string }): Response {
