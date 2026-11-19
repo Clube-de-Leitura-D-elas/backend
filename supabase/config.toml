@@ -768,6 +768,11 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/send-push/deno.json"
 
+[functions.change-password-web]
+enabled = true
+verify_jwt = true
+import_map = "./functions/change-password-web/deno.json"
+
 [functions.get-cities-web]
 enabled = true
 verify_jwt = true
