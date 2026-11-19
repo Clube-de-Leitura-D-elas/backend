@@ -17,6 +17,7 @@ const OPEN_MEETING_STATUSES = new Set([
 type GroupRow = {
   id: string;
   number: number;
+  is_active: boolean;
   whatsapp_link: string | null;
   photos: { url: string } | null;
   cities: { name: string; uf: string } | null;
@@ -33,7 +34,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data: group, error: groupError } = await ctx.supabaseAdmin
     .from("groups")
     .select(
-      "id, number, whatsapp_link, photos(url), cities(name, uf), group_genres(genres(name))",
+      "id, number, is_active, whatsapp_link, photos(url), cities(name, uf), group_genres(genres(name))",
     )
     .eq("id", groupId)
     .maybeSingle();
@@ -71,7 +72,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const authUserId = ctx.userClaims?.id;
   const { data: userMember, error: userMemberError } = await ctx.supabaseAdmin
     .from("group_users")
-    .select("is_coordinator, users!inner(user_id)")
+    .select("user_id, is_coordinator, users!inner(user_id)")
     .eq("group_id", groupId)
     .eq("users.user_id", authUserId)
     .eq("registration_status", "ACTIVE")
@@ -173,6 +174,29 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
 
   const typedGroup = group as unknown as GroupRow;
 
+  let isHostBlocked = false;
+  if (typedGroup.is_active && userMember?.user_id) {
+    const { data: blocked, error: blockedError } = await ctx.supabaseAdmin.rpc(
+      "is_reader_host_blocked",
+      {
+        p_group_id: groupId,
+        p_user_id: userMember.user_id,
+      },
+    );
+
+    if (blockedError) {
+      console.error(
+        "get-group-details recommendation eligibility error",
+        oneLine(blockedError.message),
+      );
+      return Response.json({ error: "Unable to load group details" }, {
+        status: 500,
+      });
+    }
+
+    isHostBlocked = Boolean(blocked);
+  }
+
   return Response.json({
     name: String(typedGroup.number),
     genres: typedGroup.group_genres
@@ -186,5 +210,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     has_open_meeting: Boolean(openMeeting),
     open_meeting_status: openMeeting ? openMeeting.status : null,
     pending_raffle: pendingRaffle,
+    can_recommend_book: Boolean(typedGroup.is_active) &&
+      Boolean(userMember?.user_id) && !isHostBlocked,
   });
 }));

@@ -70,8 +70,29 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .in("group_id", groupIds);
   if (suggestionError) return dbError("suggestions", suggestionError);
 
-  const recommendedGroupIds = new Set(
-    (suggestions ?? []).map((suggestion) => suggestion.group_id),
+  const { data: meetingBooks, error: meetingBookError } = await ctx
+    .supabaseAdmin
+    .from("meetings")
+    .select("group_id")
+    .eq("book_id", bookId)
+    .in("group_id", groupIds);
+  if (meetingBookError) return dbError("meetings", meetingBookError);
+
+  const { data: blockedRows, error: blockedError } = await ctx.supabaseAdmin
+    .rpc("get_host_blocked_group_ids", {
+      p_user_id: profile.id,
+      p_group_ids: groupIds,
+    });
+  if (blockedError) return dbError("host_eligibility", blockedError);
+
+  const recommendedGroupIds = new Set([
+    ...(suggestions ?? []).map((suggestion) => suggestion.group_id),
+    ...(meetingBooks ?? []).map((meeting) => meeting.group_id),
+  ]);
+  const blockedGroupIds = new Set(
+    ((blockedRows ?? []) as { group_id: string }[]).map(
+      (row) => row.group_id,
+    ),
   );
   const uniqueGroups = new Map<string, GroupRow>();
   for (const row of rows) uniqueGroups.set(row.group_id, row.groups);
@@ -91,6 +112,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       name: `Grupo ${group.number}`,
       photo_url: resolvePhotoUrl(group.photos?.url),
       already_recommended: recommendedGroupIds.has(groupId),
+      can_recommend: !blockedGroupIds.has(groupId),
     })),
   });
 }));
