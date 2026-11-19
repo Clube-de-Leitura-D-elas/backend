@@ -45,3 +45,30 @@ export const normalizeLocationName = (value: string) =>
     .replace(/[̀-ͯ]/g, "")
     .toLocaleLowerCase("pt-BR")
     .trim();
+
+// Códigos que o trigger `groups_location_active` levanta ao ativar ou mover um
+// grupo para cidade/zona inativa. As functions checam antes, mas só o trigger
+// fecha a corrida com a desativação; este mapa traduz o erro dele.
+const INACTIVE_LOCATION_ERRCODES: Record<string, "city_inactive" | "zone_inactive"> = {
+  CZ007: "city_inactive",
+  CZ008: "zone_inactive",
+};
+
+export const inactiveLocationCode = (
+  error: { code?: string } | null,
+): "city_inactive" | "zone_inactive" | null =>
+  error?.code && Object.hasOwn(INACTIVE_LOCATION_ERRCODES, error.code)
+    ? INACTIVE_LOCATION_ERRCODES[error.code]
+    : null;
+
+export const inactiveLocationResponse = (
+  code: "city_inactive" | "zone_inactive",
+  status: 400 | 409,
+) =>
+  Response.json(
+    {
+      error: code === "city_inactive" ? "city is inactive" : "zone is inactive",
+      code,
+    },
+    { status },
+  );

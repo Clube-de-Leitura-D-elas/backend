@@ -4,6 +4,10 @@ import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
 import { oneLine } from "../_shared/log.ts";
 import { isUuid } from "../_shared/uuid.ts";
+import {
+  inactiveLocationCode,
+  inactiveLocationResponse,
+} from "../_shared/city.ts";
 
 // Edita a localização de um grupo no painel web (só fundadora).
 // POST { group_id, description, city_id, zone_id | null }
@@ -123,6 +127,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .maybeSingle();
 
   if (error) {
+    const inactive = inactiveLocationCode(error);
+    if (inactive) return inactiveLocationResponse(inactive, 400);
+
     console.error("update-group-location error", oneLine(error.message));
     return Response.json({ error: error.message }, { status: 500 });
   }

@@ -1,3 +1,15 @@
+-- CLU-219: cidades e regiões (zonas) passam a ser cadastradas e desativadas
+-- pelo painel.
+--
+-- Os nomes existentes são limpos e as duplicatas (mesmo nome normalizado e
+-- mesma UF; para zonas, mesmo nome na mesma cidade) são unidas na linha mais
+-- usada por grupos, depois por participantes, com o menor id desempatando.
+-- Só depois disso entram os UNIQUE, então nenhum par sobra para abortar.
+--
+-- Regra central: grupo ativo nunca fica em cidade ou zona inativa. As RPCs de
+-- desativação travam a linha e contam grupos ativos; o trigger em `groups`
+-- trava a mesma linha ao ativar ou mover um grupo, e é isso que impede a
+-- corrida entre as duas operações.
 ALTER TABLE public.cities
   ADD COLUMN is_active boolean NOT NULL DEFAULT true;
 
@@ -92,11 +104,25 @@ CREATE UNIQUE INDEX zones_city_id_name_key
 ALTER TABLE public.cities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.zones ENABLE ROW LEVEL SECURITY;
 
+-- Qualquer usuária autenticada continua lendo as cidades e zonas ativas pela
+-- REST (o GRANT de 20261006120000 segue valendo); só a gestão vê as inativas.
+CREATE POLICY "Authenticated reads active cities"
+  ON public.cities
+  FOR SELECT
+  TO authenticated
+  USING (is_active);
+
 CREATE POLICY "Management reads cities"
   ON public.cities
   FOR SELECT
   TO authenticated
   USING ((SELECT auth.jwt() ->> 'app_role') IN ('MANAGER', 'FOUNDER'));
+
+CREATE POLICY "Authenticated reads active zones"
+  ON public.zones
+  FOR SELECT
+  TO authenticated
+  USING (is_active);
 
 CREATE POLICY "Management reads zones"
   ON public.zones
@@ -104,25 +130,41 @@ CREATE POLICY "Management reads zones"
   TO authenticated
   USING ((SELECT auth.jwt() ->> 'app_role') IN ('MANAGER', 'FOUNDER'));
 
-CREATE OR REPLACE FUNCTION public.resolve_city_id(
-  p_name text
+-- O app e o resgate só mandam o nome da cidade, sem UF. Uma linha inativa só
+-- casa quando já é a da usuária (p_current_id), para que salvar o perfil sem
+-- mexer na cidade não a apague. Se o nome casar com cidades ativas de UFs
+-- diferentes, devolve NULL em vez de escolher um estado pela ordem dos ids.
+-- A assinatura muda, então as versões antigas são removidas; as chamadas com
+-- um argumento (claim_user_profile) continuam válidas pelo DEFAULT.
+DROP FUNCTION public.resolve_city_id(text);
+DROP FUNCTION public.resolve_zone_id(uuid, text);
+
+CREATE FUNCTION public.resolve_city_id(
+  p_name text,
+  p_current_id uuid DEFAULT NULL
 )
 RETURNS uuid
 LANGUAGE sql
 STABLE
 SET search_path = ''
 AS $$
-  SELECT city.id
-  FROM public.cities city
-  WHERE public.normalize_location_name(city.name)
-    = public.normalize_location_name(p_name)
-  ORDER BY city.is_active DESC, city.id
-  LIMIT 1;
+  WITH candidates AS (
+    SELECT city.id
+    FROM public.cities city
+    WHERE public.normalize_location_name(city.name)
+      = public.normalize_location_name(p_name)
+      AND (city.is_active OR city.id = p_current_id)
+  )
+  SELECT coalesce(
+    (SELECT id FROM candidates WHERE id = p_current_id),
+    (SELECT id FROM candidates WHERE (SELECT count(*) FROM candidates) = 1)
+  );
 $$;
 
-CREATE OR REPLACE FUNCTION public.resolve_zone_id(
+CREATE FUNCTION public.resolve_zone_id(
   p_city_id uuid,
-  p_name text
+  p_name text,
+  p_current_id uuid DEFAULT NULL
 )
 RETURNS uuid
 LANGUAGE sql
@@ -134,9 +176,21 @@ AS $$
   WHERE zone.city_id = p_city_id
     AND public.normalize_location_name(zone.name)
       = public.normalize_location_name(p_name)
-  ORDER BY zone.is_active DESC, zone.id
+    AND (zone.is_active OR zone.id = p_current_id)
   LIMIT 1;
 $$;
+
+REVOKE ALL ON FUNCTION public.resolve_city_id(text, uuid)
+FROM PUBLIC, anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.resolve_zone_id(uuid, text, uuid)
+FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.resolve_city_id(text, uuid)
+TO service_role;
+
+GRANT EXECUTE ON FUNCTION public.resolve_zone_id(uuid, text, uuid)
+TO service_role;
 
 CREATE OR REPLACE FUNCTION public.list_cities(
   p_search text,
@@ -398,3 +452,153 @@ TO service_role;
 
 GRANT EXECUTE ON FUNCTION public.set_city_active(uuid, boolean)
 TO service_role;
+
+-- Mesmo corpo de 20261116120000; a única mudança é passar a cidade e a zona
+-- atuais para as resoluções, que de outro modo apagariam uma localização que
+-- ficou inativa depois de atribuída.
+CREATE OR REPLACE FUNCTION public.update_user_profile(
+  p_user_id uuid,
+  p_name varchar,
+  p_phone varchar,
+  p_birth_date date,
+  p_job varchar,
+  p_level_of_education public.levels_of_education,
+  p_city_name text,
+  p_zone_name text,
+  p_suggested_book text,
+  p_expectations text,
+  p_has_other_reading_group boolean,
+  p_wants_to_coordinate boolean
+)
+RETURNS void
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  current_profile public.users;
+  resolved_city_id uuid;
+  resolved_zone_id uuid;
+  update_city boolean := false;
+  update_zone boolean := false;
+  city_name_given boolean := coalesce(btrim(p_city_name), '') <> '';
+  zone_name_given boolean := coalesce(btrim(p_zone_name), '') <> '';
+BEGIN
+  SELECT *
+  INTO current_profile
+  FROM public.users
+  WHERE id = p_user_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING
+      ERRCODE = 'UP001',
+      MESSAGE = 'user profile not found';
+  END IF;
+
+  IF city_name_given THEN
+    resolved_city_id := public.resolve_city_id(
+      p_city_name,
+      current_profile.city_id
+    );
+    update_city := true;
+
+    IF resolved_city_id IS DISTINCT FROM current_profile.city_id
+      OR zone_name_given THEN
+      resolved_zone_id := public.resolve_zone_id(
+        resolved_city_id,
+        p_zone_name,
+        current_profile.zone_id
+      );
+      update_zone := true;
+    END IF;
+  ELSIF zone_name_given THEN
+    resolved_zone_id := public.resolve_zone_id(
+      current_profile.city_id,
+      p_zone_name,
+      current_profile.zone_id
+    );
+    update_zone := true;
+  END IF;
+
+  UPDATE public.users
+  SET name = btrim(p_name),
+      phone = btrim(p_phone),
+      birth_date = p_birth_date,
+      job = nullif(btrim(p_job), ''),
+      level_of_education = p_level_of_education,
+      city_id = CASE WHEN update_city THEN resolved_city_id ELSE city_id END,
+      zone_id = CASE WHEN update_zone THEN resolved_zone_id ELSE zone_id END,
+      expectations = p_expectations,
+      has_other_reading_group = p_has_other_reading_group,
+      wants_to_coordinate = p_wants_to_coordinate
+  WHERE id = p_user_id;
+
+  IF coalesce(btrim(p_suggested_book), '') <> '' THEN
+    INSERT INTO public.onboarding_book_suggestions AS suggestion (user_id, name)
+    VALUES (p_user_id, btrim(p_suggested_book))
+    ON CONFLICT (user_id) DO UPDATE
+    SET name = EXCLUDED.name;
+  END IF;
+END;
+$$;
+
+-- Grupo ativo só em cidade e zona ativas. A checagem nas functions sozinha tem
+-- corrida com set_city_active/save_city: as duas leem antes de escrever. O
+-- FOR SHARE aqui espera o FOR UPDATE da desativação (e vice-versa), então uma
+-- das duas sempre enxerga a outra já gravada.
+CREATE FUNCTION public.check_group_location_active()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF NOT NEW.is_active THEN
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'UPDATE'
+    AND OLD.is_active
+    AND NEW.city_id IS NOT DISTINCT FROM OLD.city_id
+    AND NEW.zone_id IS NOT DISTINCT FROM OLD.zone_id THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.city_id IS NOT NULL THEN
+    PERFORM 1
+    FROM public.cities
+    WHERE id = NEW.city_id
+      AND is_active
+    FOR SHARE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION USING
+        ERRCODE = 'CZ007',
+        MESSAGE = 'group city is inactive';
+    END IF;
+  END IF;
+
+  IF NEW.zone_id IS NOT NULL THEN
+    PERFORM 1
+    FROM public.zones
+    WHERE id = NEW.zone_id
+      AND is_active
+    FOR SHARE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION USING
+        ERRCODE = 'CZ008',
+        MESSAGE = 'group zone is inactive';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.check_group_location_active()
+FROM PUBLIC, anon, authenticated;
+
+CREATE TRIGGER groups_location_active
+  BEFORE INSERT OR UPDATE OF is_active, city_id, zone_id ON public.groups
+  FOR EACH ROW
+  EXECUTE FUNCTION public.check_group_location_active();

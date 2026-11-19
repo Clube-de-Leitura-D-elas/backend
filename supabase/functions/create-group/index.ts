@@ -4,6 +4,10 @@ import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
 import { oneLine } from "../_shared/log.ts";
 import { isUuid } from "../_shared/uuid.ts";
+import {
+  inactiveLocationCode,
+  inactiveLocationResponse,
+} from "../_shared/city.ts";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -98,6 +102,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       // A constraint UNIQUE (number) já existe. Se outra requisição tiver
       // criado este número antes, lê o maior novamente e tenta outro.
       if (error.code === UNIQUE_VIOLATION) continue;
+
+      const inactive = inactiveLocationCode(error);
+      if (inactive) return inactiveLocationResponse(inactive, 400);
 
       console.error("create-group error", oneLine(error.message));
       return Response.json({ error: error.message }, { status: 500 });

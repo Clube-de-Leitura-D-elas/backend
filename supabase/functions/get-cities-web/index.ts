@@ -32,7 +32,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const status = url.searchParams.get("status") ?? "all";
-  if (!(status in STATUS_FILTER)) {
+  if (!Object.hasOwn(STATUS_FILTER, status)) {
     return Response.json({ error: 'invalid "status"' }, { status: 400 });
   }
 
