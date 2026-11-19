@@ -25,7 +25,9 @@ type MeetingRow = {
   groups: { number: number };
   locations: { name: string } | null;
   meeting_photos: { is_sketch: boolean }[];
-  meeting_raffles: { meeting_id: string } | null;
+  // A FK composta (meeting_id, group_id) não é única aos olhos do PostgREST,
+  // então o embed pode vir como lista.
+  meeting_raffles: { meeting_id: string }[] | { meeting_id: string } | null;
 };
 
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
@@ -35,7 +37,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   const { data, error } = await ctx.supabaseAdmin
     .from("meetings")
     .select(
-      "id, group_id, host_id, status, date, location_id, books!inner(name, author), groups!inner(number), locations(name), meeting_photos(is_sketch), meeting_raffles!meeting_raffles_meeting_id_fkey(meeting_id)",
+      "id, group_id, host_id, status, date, location_id, books!inner(name, author), groups!inner(number), locations(name), meeting_photos(is_sketch), meeting_raffles!meeting_raffles_meeting_group_id_fkey(meeting_id)",
     )
     .eq("id", meetingId)
     .maybeSingle();
@@ -74,7 +76,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     can_conclude: canManageTasks && canConclude(meeting),
     // Quem saiu do sorteio sem concluir precisa conseguir voltar a ele.
     can_raffle: canManageTasks && RECORD_STATUSES.includes(meeting.status) &&
-      !meeting.meeting_raffles,
+      !hasRaffle(meeting.meeting_raffles),
     book_title: meeting.books.name,
     book_author: meeting.books.author,
     group_name: `Grupo ${meeting.groups.number}`,
@@ -90,3 +92,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     },
   });
 }));
+
+function hasRaffle(raffles: MeetingRow["meeting_raffles"]): boolean {
+  return Array.isArray(raffles) ? raffles.length > 0 : Boolean(raffles);
+}

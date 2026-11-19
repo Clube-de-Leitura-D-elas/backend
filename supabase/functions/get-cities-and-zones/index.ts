@@ -6,10 +6,10 @@ import { oneLine } from "../_shared/log.ts";
 type Zone = { id: string; name: string };
 type City = { id: string; name: string; uf: string; zones: Zone[] };
 
-// Dados de referência para o onboarding (e qualquer select futuro): todas as
-// cidades e zonas, aninhadas e em ordem alfabética. A leitora autenticada já
-// pode ler `cities`/`zones` pela REST, mas a function evita duas chamadas e
-// monta o aninhamento no servidor, que é o formato das opções dependentes.
+// Dados de referência para o onboarding (e qualquer select futuro): cidades e
+// zonas ativas, aninhadas e em ordem alfabética. A RLS deixa a leitora ler só as
+// linhas ativas pela REST, mas a function evita duas chamadas e monta o
+// aninhamento no servidor, que é o formato das opções dependentes.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "GET") {
     return Response.json({ error: "expected GET request" }, { status: 405 });
@@ -21,8 +21,16 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   }
 
   const [citiesResult, zonesResult] = await Promise.all([
-    ctx.supabaseAdmin.from("cities").select("id, name, uf").order("name"),
-    ctx.supabaseAdmin.from("zones").select("id, name, city_id").order("name"),
+    ctx.supabaseAdmin
+      .from("cities")
+      .select("id, name, uf")
+      .eq("is_active", true)
+      .order("name"),
+    ctx.supabaseAdmin
+      .from("zones")
+      .select("id, name, city_id")
+      .eq("is_active", true)
+      .order("name"),
   ]);
 
   const error = citiesResult.error ?? zonesResult.error;
