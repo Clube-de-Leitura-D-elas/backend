@@ -2,7 +2,8 @@
 -- (change-password-web), sem criar sessão nem gastar o limite de login do Auth.
 --
 -- password_check_failures conta os erros por usuária numa janela de 15 minutos. Tem RLS ligada
--- e nenhuma policy nem GRANT: só check_user_password (SECURITY DEFINER) lê e grava.
+-- e nenhuma policy; o GRANT é só para a service_role, como nas outras tabelas. Hoje só
+-- check_user_password (SECURITY DEFINER) lê e grava.
 --
 -- check_user_password cria a linha da usuária antes do SELECT ... FOR UPDATE. Sem isso, chamadas
 -- em paralelo de quem ainda não tem linha não travariam nada e passariam do limite de 5 erros.
@@ -18,6 +19,7 @@ CREATE TABLE public.password_check_failures (
 ALTER TABLE public.password_check_failures ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON TABLE public.password_check_failures FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.password_check_failures TO service_role;
 
 CREATE OR REPLACE FUNCTION public.check_user_password(p_user_id uuid, p_password text)
 RETURNS text
@@ -56,7 +58,11 @@ BEGIN
   END IF;
 
   IF extensions.crypt(p_password, v_hash) = v_hash THEN
-    DELETE FROM public.password_check_failures WHERE user_id = p_user_id;
+    -- Zera em vez de apagar: uma chamada parada no FOR UPDATE acima não acharia
+    -- a linha apagada e o erro dela não seria contado.
+    UPDATE public.password_check_failures
+    SET failures = 0
+    WHERE user_id = p_user_id;
     RETURN 'ok';
   END IF;
 

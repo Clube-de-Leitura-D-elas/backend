@@ -88,11 +88,22 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
       { status: 429 },
     );
   }
-  if (check !== "ok") {
+  if (check === "wrong") {
+    // 400, não 403: a senha atual é dado de entrada; 403 fica para quem não
+    // tem o papel de gestão.
     return Response.json(
       { error: "current password is wrong", code: "wrong_password" },
-      { status: 403 },
+      { status: 400 },
     );
+  }
+  if (check !== "ok") {
+    console.error(
+      "change-password-web check unexpected",
+      oneLine(String(check)),
+    );
+    return Response.json({ error: "Unable to change password" }, {
+      status: 500,
+    });
   }
 
   const { error: updateError } = await ctx.supabaseAdmin.auth.admin
