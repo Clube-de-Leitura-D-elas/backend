@@ -70,11 +70,12 @@ FROM (VALUES
   ('poa', 'Porto Alegre',   'RS'),
   ('sp',  'São Paulo',      'SP'),
   ('bh',  'Belo Horizonte', 'MG'),
-  ('rec', 'Recife',         'PE')
+  ('rec', 'Recife',         'PE'),
+  ('cwb', 'Curitiba',       'PR')
 ) AS v(key, name, uf);
 
-INSERT INTO public.cities (id, name, uf)
-SELECT id, name, uf FROM s_city
+INSERT INTO public.cities (id, name, uf, is_active)
+SELECT id, name, uf, key <> 'cwb' FROM s_city
 ON CONFLICT (id) DO NOTHING;
 
 CREATE OR REPLACE FUNCTION pg_temp.cid(k text) RETURNS uuid

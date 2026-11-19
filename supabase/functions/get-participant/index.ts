@@ -18,6 +18,8 @@ type ParticipantRow = {
   photos: { url: string } | null;
   created_at: string;
   app_role: string;
+  city_id: string | null;
+  zone_id: string | null;
   cities: { name: string } | null;
   zones: { name: string } | null;
 };
@@ -33,7 +35,7 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     const { data, error } = await ctx.supabaseAdmin
       .from("users")
       .select(
-        "id, name, phone, instagram, email, birth_date, job, is_active, photos(url), created_at, app_role, cities(name), zones(name)"      )
+        "id, name, phone, instagram, email, birth_date, job, is_active, photos(url), created_at, app_role, city_id, zone_id, cities(name), zones(name)"      )
       .eq("id", participantId)
       .maybeSingle();
 

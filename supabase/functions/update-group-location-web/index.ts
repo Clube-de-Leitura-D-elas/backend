@@ -4,6 +4,10 @@ import type { Database } from "../_shared/database.ts";
 import { requireFounder } from "../_shared/founder.ts";
 import { oneLine } from "../_shared/log.ts";
 import { isUuid } from "../_shared/uuid.ts";
+import {
+  inactiveLocationCode,
+  inactiveLocationResponse,
+} from "../_shared/city.ts";
 
 // Edita a localização de um grupo no painel web (só fundadora).
 // POST { group_id, description, city_id, zone_id | null }
@@ -51,11 +55,29 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: 'invalid "zone_id"' }, { status: 400 });
   }
 
+  const { data: current, error: currentError } = await ctx.supabaseAdmin
+    .from("groups")
+    .select("city_id, zone_id")
+    .eq("id", groupId)
+    .maybeSingle();
+
+  if (currentError) {
+    console.error(
+      "update-group-location-web group",
+      oneLine(currentError.message),
+    );
+    return Response.json({ error: "Unable to update group" }, { status: 500 });
+  }
+
+  if (!current) {
+    return Response.json({ error: "group not found" }, { status: 404 });
+  }
+
   // A zona precisa ser da cidade escolhida; sem isso o grupo fica com uma
   // "Zona Sul" de outra cidade.
   const { data: city, error: cityError } = await ctx.supabaseAdmin
     .from("cities")
-    .select("id, zones(id)")
+    .select("id, is_active, zones(id, is_active)")
     .eq("id", cityId)
     .maybeSingle();
 
@@ -71,9 +93,24 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     return Response.json({ error: "city not found" }, { status: 400 });
   }
 
-  const cityZones = (city.zones ?? []) as { id: string }[];
-  if (zoneId !== null && !cityZones.some((zone) => zone.id === zoneId)) {
+  if (!city.is_active && cityId !== current.city_id) {
+    return Response.json({ error: "city is inactive", code: "city_inactive" }, {
+      status: 400,
+    });
+  }
+
+  const cityZones = (city.zones ?? []) as { id: string; is_active: boolean }[];
+  const zone = zoneId === null
+    ? null
+    : cityZones.find((item) => item.id === zoneId);
+  if (zone === undefined) {
     return Response.json({ error: "zone does not belong to city" }, {
+      status: 400,
+    });
+  }
+
+  if (zone && !zone.is_active && zoneId !== current.zone_id) {
+    return Response.json({ error: "zone is inactive", code: "zone_inactive" }, {
       status: 400,
     });
   }
@@ -90,6 +127,9 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
     .maybeSingle();
 
   if (error) {
+    const inactive = inactiveLocationCode(error);
+    if (inactive) return inactiveLocationResponse(inactive, 400);
+
     console.error("update-group-location error", oneLine(error.message));
     return Response.json({ error: error.message }, { status: 500 });
   }
