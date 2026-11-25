@@ -3,7 +3,9 @@
 -- Cada item ganha `recent_attendance`: as três presenças registradas mais recentes da
 -- participante ('PRESENT' ou 'ABSENT'), da mais antiga para a mais nova. Contam só encontros
 -- encerrados (ENDED/CONCLUDED) com presença registrada; com o filtro de grupo, só os encontros
--- daquele grupo. Quem aguarda conta (`pending_users`) não tem encontros e recebe lista vazia.
+-- daquele grupo. Sem filtro, a presença como convidada em encontro de outro grupo também conta.
+-- Encontro sem data fica por último (NULLS LAST) e o id desempata datas iguais. Quem aguarda
+-- conta (`pending_users`) não tem encontros e recebe lista vazia.
 -- A assinatura e o retorno (jsonb) não mudam, então o CREATE OR REPLACE mantém os grants; o
 -- REVOKE/GRANT abaixo só reafirma o acesso exclusivo da service role. Não altera dados.
 
@@ -91,16 +93,16 @@ BEGIN
            'status', pg.status,
            'group_user_ids', to_jsonb(pg.group_user_ids),
            'recent_attendance', coalesce(
-             (SELECT jsonb_agg(recent.presence ORDER BY recent.date)
+             (SELECT jsonb_agg(recent.presence ORDER BY recent.date NULLS FIRST, recent.id)
               FROM (
-                SELECT mu.presence_status::text AS presence, m.date
+                SELECT mu.presence_status::text AS presence, m.date, m.id
                 FROM public.meeting_users mu
                 JOIN public.meetings m ON m.id = mu.meeting_id
                 WHERE mu.user_id = pg.id
                   AND mu.presence_status IS NOT NULL
                   AND m.status::text IN ('ENDED', 'CONCLUDED')
                   AND (p_group_id IS NULL OR m.group_id = p_group_id)
-                ORDER BY m.date DESC
+                ORDER BY m.date DESC NULLS LAST, m.id DESC
                 LIMIT 3
               ) recent),
              '[]'::jsonb
