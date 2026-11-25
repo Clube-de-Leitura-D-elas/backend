@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { type SupabaseContext, withSupabase } from "jsr:@supabase/server@^1";
+import { findOrCreateBook } from "../_shared/books.ts";
 import type { Database } from "../_shared/database.ts";
 import { oneLine } from "../_shared/log.ts";
 import { toPositiveInt } from "../_shared/pagination.ts";
@@ -36,15 +37,17 @@ type ReviewRow = MyReviewRow & {
 
 // Tudo que a tela de detalhes do livro precisa: dados e sinopse, média das
 // avaliações, estado da leitora (estante e avaliação dela) e as avaliações das
-// outras leitoras, paginadas. Query string: bookId, reviewsPage, reviewsPageSize.
+// outras leitoras, paginadas. Query string: bookId ou externalId, reviewsPage,
+// reviewsPageSize.
 Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (req.method !== "GET") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
   const url = new URL(req.url);
-  const bookId = url.searchParams.get("bookId");
-  if (!isUuid(bookId)) {
+  const requestedBookId = url.searchParams.get("bookId");
+  const externalId = url.searchParams.get("externalId");
+  if (!isUuid(requestedBookId) && externalId === null) {
     return Response.json({ error: "invalid_book_id" }, { status: 400 });
   }
 
@@ -62,6 +65,21 @@ Deno.serve(withSupabase<Database>({ auth: "user" }, async (req, ctx) => {
   if (profileError) return dbError("profile", profileError);
   if (!profile) {
     return Response.json({ error: "User profile not found" }, { status: 404 });
+  }
+
+  let bookId = requestedBookId;
+  if (!bookId && externalId !== null) {
+    const resolved = await findOrCreateBook(
+      ctx,
+      externalId,
+      profile.id,
+      LOG_LABEL,
+    );
+    if (resolved instanceof Response) return resolved;
+    bookId = resolved;
+  }
+  if (!isUuid(bookId)) {
+    return Response.json({ error: "invalid_book_id" }, { status: 400 });
   }
 
   const { data: bookData, error: bookError } = await ctx.supabaseAdmin
