@@ -12,6 +12,7 @@ type ParticipantRow = {
   is_active: boolean;
   status: "active" | "inactive" | "awaiting_account";
   group_user_ids: string[];
+  recent_attendance: ("PRESENT" | "ABSENT")[];
 };
 
 type ParticipantListResult = { items: ParticipantRow[]; total: number };
